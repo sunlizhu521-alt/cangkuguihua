@@ -1,0 +1,6 @@
+name = "cangkuguihua-ai-relay"
+main = "src/index.ts"
+compatibility_date = "2026-08-30"
+
+[vars]
+ALLOWED_ORIGIN = "https://sunlizhu521-alt.github.io"
