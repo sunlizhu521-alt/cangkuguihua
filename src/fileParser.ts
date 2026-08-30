@@ -64,17 +64,19 @@ function pickHeaderRow(rows: unknown[][]): { headers: string[]; headerIndex: num
   return { headers: uniqueHeaders(rows[headerIndex], widestColumn + 1), headerIndex }
 }
 
-function workbookFromData(data: ArrayBuffer, fileName: string) {
+function workbookFromData(data: ArrayBuffer, fileName: string, sheetRows?: number) {
   const isCsv = fileName.toLowerCase().endsWith('.csv')
-  if (!isCsv) return XLSX.read(data, { type: 'array', cellDates: true })
+  if (!isCsv) return XLSX.read(data, { type: 'array', cellDates: true, sheetRows })
   const bytes = new Uint8Array(data)
   const utf8 = new TextDecoder('utf-8').decode(bytes)
   const csvText = utf8.includes('\uFFFD') ? new TextDecoder('gb18030').decode(bytes) : utf8
   return XLSX.read(csvText.replace(/^\uFEFF/, ''), { type: 'string', cellDates: true })
 }
 
-function sheetBounds(sheet: XLSX.WorkSheet) {
-  return sheet['!ref'] ? XLSX.utils.decode_range(sheet['!ref']) : undefined
+function sheetBounds(sheet: XLSX.WorkSheet, includeFullRange = false) {
+  const fullReference = (sheet as XLSX.WorkSheet & { '!fullref'?: string })['!fullref']
+  const reference = includeFullRange ? fullReference ?? sheet['!ref'] : sheet['!ref']
+  return reference ? XLSX.utils.decode_range(reference) : undefined
 }
 
 function headerSample(sheet: XLSX.WorkSheet) {
@@ -92,8 +94,9 @@ function selectDataSheet(workbook: XLSX.WorkBook) {
   for (const sheetName of workbook.SheetNames) {
     const sheet = workbook.Sheets[sheetName]
     if (!sheet) continue
-    const bounds = sheetBounds(sheet)
-    if (!bounds) continue
+    const sampledBounds = sheetBounds(sheet)
+    const bounds = sheetBounds(sheet, true)
+    if (!sampledBounds || !bounds) continue
     const { headers, headerIndex } = pickHeaderRow(headerSample(sheet))
     if (headers.length >= 2 && bounds.e.r > headerIndex) return { sheetName, sheet, bounds, headers, headerIndex }
   }
@@ -102,7 +105,7 @@ function selectDataSheet(workbook: XLSX.WorkBook) {
 
 export async function inspectWorkbook(file: File, definition: FileSlotDefinition): Promise<StoredFile> {
   const data = await file.arrayBuffer()
-  const workbook = workbookFromData(data, file.name)
+  const workbook = workbookFromData(data, file.name, HEADER_SCAN_ROW_LIMIT + 10)
   if (!workbook.SheetNames.length) throw new Error('文件中没有可读取的工作表')
   const selectedSheet = selectDataSheet(workbook)
   if (!selectedSheet) throw new Error('所有工作表中都没有找到至少包含两列、且下方有数据的标题行')
@@ -192,19 +195,48 @@ export function parseForecast(file: StoredFile): ForecastRecord[] {
 }
 
 export function parseOutbound(file: StoredFile, channel: OutboundRecord['channel']): OutboundRecord[] {
-  return readMappedRows(file).map((row) => {
-    const productCode = String(row['商品编码'] ?? '').trim()
-    const status = String(row['订单状态'] ?? '').trim()
-    return {
+  const workbook = workbookFromData(file.data, file.fileName)
+  const selectedSheet = file.sourceSheetName && workbook.Sheets[file.sourceSheetName]
+    ? (() => {
+        const sheet = workbook.Sheets[file.sourceSheetName!]
+        const bounds = sheetBounds(sheet)
+        const picked = pickHeaderRow(headerSample(sheet))
+        return bounds && picked.headers.length ? { sheet, bounds, ...picked } : undefined
+      })()
+    : selectDataSheet(workbook)
+  if (!selectedSheet) return []
+  const { sheet, bounds, headers, headerIndex } = selectedSheet
+  const sourceColumns = new Map(headers.map((header, column) => [header, column]))
+  const mappedColumn = (standardField: string) => {
+    const sourceHeader = file.mapping[standardField]
+    return sourceHeader ? sourceColumns.get(sourceHeader) : undefined
+  }
+  const columns = {
+    productCode: mappedColumn('商品编码'),
+    series: mappedColumn('销售系列'),
+    date: mappedColumn('出库日期'),
+    postalCode: mappedColumn('邮编'),
+    quantity: mappedColumn('数量'),
+    status: mappedColumn('订单状态'),
+  }
+  const cellValue = (row: number, column: number | undefined) => column === undefined ? '' : sheet[XLSX.utils.encode_cell({ r: row, c: column })]?.v ?? ''
+  const records: OutboundRecord[] = []
+  for (let row = headerIndex + 1; row <= bounds.e.r; row += 1) {
+    const productCode = String(cellValue(row, columns.productCode)).trim()
+    const quantity = normalizeNumber(cellValue(row, columns.quantity))
+    const status = String(cellValue(row, columns.status)).trim()
+    if (!productCode || quantity <= 0 || (status && !/完成|已发|发货|shipped|completed|fulfilled|released|order/i.test(status))) continue
+    records.push({
       productCode,
-      series: String(row['销售系列'] ?? '').trim() || productCode,
-      date: normalizeDate(row['出库日期']),
-      postalCode: String(row['邮编'] ?? '').trim(),
-      quantity: normalizeNumber(row['数量']),
+      series: String(cellValue(row, columns.series)).trim() || productCode,
+      date: normalizeDate(cellValue(row, columns.date)),
+      postalCode: String(cellValue(row, columns.postalCode)).trim(),
+      quantity,
       status,
       channel,
-    }
-  }).filter((row) => row.productCode && row.quantity > 0 && (!row.status || /完成|已发|发货|shipped|completed|fulfilled|released|order/i.test(row.status)))
+    })
+  }
+  return records
 }
 
 export function parsePackaging(file: StoredFile): PackagingRecord[] {

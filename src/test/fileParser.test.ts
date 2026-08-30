@@ -133,6 +133,32 @@ describe('工作簿标题行解析', () => {
     expect(inspected.headers).toEqual(['商品编码', '数量'])
     expect(inspected.rowCount).toBe(1)
   })
+
+  it('大文件预览只读取前段数据但保留完整数据行数', async () => {
+    const workbook = XLSX.utils.book_new()
+    const rows = [['商品编码', '数量'], ...Array.from({ length: 300 }, (_, index) => [`商品${index + 1}`, index + 1])]
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), '出库')
+    const data = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
+    const file = { name: '大文件.xlsx', arrayBuffer: async () => data } as File
+    const definition = fileSlots.find((slot) => slot.id === 'merchantOutbound')!
+
+    const inspected = await inspectWorkbook(file, definition)
+
+    expect(inspected.rowCount).toBe(300)
+    expect(inspected.previewRows).toHaveLength(8)
+  })
+
+  it('较长的CSV文件同样保留完整数据行数', async () => {
+    const csv = ['商品编码,数量', ...Array.from({ length: 300 }, (_, index) => `商品${index + 1},${index + 1}`)].join('\n')
+    const data = new TextEncoder().encode(csv).buffer as ArrayBuffer
+    const file = { name: '大文件.csv', arrayBuffer: async () => data } as File
+    const definition = fileSlots.find((slot) => slot.id === 'merchantOutbound')!
+
+    const inspected = await inspectWorkbook(file, definition)
+
+    expect(inspected.rowCount).toBe(300)
+    expect(inspected.headers).toEqual(['商品编码', '数量'])
+  })
 })
 
 describe('出库数据解析', () => {

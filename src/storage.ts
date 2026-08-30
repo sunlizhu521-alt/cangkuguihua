@@ -30,6 +30,18 @@ export async function saveFile(file: StoredFile) {
   return db.files.add(file)
 }
 
+export async function updateFileMapping(file: StoredFile) {
+  const existing = await db.files.where('slotId').equals(file.slotId).first()
+  if (!existing?.id) throw new Error('没有找到需要更新映射的文件')
+  await db.files.update(existing.id, {
+    mapping: file.mapping,
+    missingFields: file.missingFields,
+    validation: file.validation,
+    updatedAt: file.updatedAt,
+  })
+  return existing.id
+}
+
 export async function saveQuote(quote: QuoteVersion) {
   const existing = await db.quotes.where('slot').equals(quote.slot).first()
   if (existing?.id) return db.quotes.put({ ...quote, id: existing.id })

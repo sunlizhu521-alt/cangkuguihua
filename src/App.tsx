@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import AppShell from './components/AppShell'
 import FileLibraryPage from './pages/FileLibraryPage'
 import MappingPage from './pages/MappingPage'
@@ -6,7 +6,7 @@ import QuotePage from './pages/QuotePage'
 import ResultsPage, { type HistoricalSummary } from './pages/ResultsPage'
 import SettingsPage from './pages/SettingsPage'
 import { defaultAddresses, defaultAnalysisSettings, defaultQuoteSlots, stateRegions } from './data'
-import { db, getSetting, saveFile, saveQuote, settingKeys, setSetting } from './storage'
+import { db, getSetting, saveFile, saveQuote, settingKeys, setSetting, updateFileMapping } from './storage'
 import { inspectWorkbook, localQuoteDraft, parseForecast, parseInventory, parseOutbound, parsePackaging, parseWarehouses, postalRegion, readMappedRows } from './fileParser'
 import { optimizeTransfers } from './analysis'
 import { parseQuoteWithAi, testAiConnection } from './ai'
@@ -42,6 +42,7 @@ export default function App() {
   const [addresses, setAddresses] = useState<WarehouseAddress[]>([])
   const [manualQuotes, setManualQuotes] = useState<ManualTransferQuote[]>([])
   const [results, setResults] = useState<AnalysisResult[]>([])
+  const [history, setHistory] = useState<HistoricalSummary>(() => emptyHistoricalSummary())
 
   const refreshData = async () => {
     const [nextFiles, nextQuotes, nextAddresses, nextManual, savedResults] = await Promise.all([db.files.toArray(), db.quotes.orderBy('slot').toArray(), db.warehouseAddresses.toArray(), db.manualTransferQuotes.toArray(), db.results.orderBy('createdAt').last()])
@@ -72,9 +73,10 @@ export default function App() {
     setUploading(definition.id)
     try {
       const inspected = await inspectWorkbook(file, definition)
-      await saveFile(inspected)
-      await refreshData()
-      setSelectedFile(inspected)
+      const savedId = await saveFile(inspected)
+      const stored = { ...inspected, id: typeof savedId === 'number' ? savedId : undefined }
+      setFiles((current) => [...current.filter((item) => item.slotId !== stored.slotId), stored])
+      setSelectedFile(stored)
       setPage('mapping')
       notify(`已读取“${inspected.sourceSheetName ?? inspected.sheetNames[0] ?? '未识别工作表'}”：${inspected.headers.length} 列、${inspected.rowCount.toLocaleString('zh-CN')} 行，请选择需要映射的字段`, 'info')
     } catch (error) { notify(error instanceof Error ? error.message : '文件读取失败', 'danger') }
@@ -85,9 +87,10 @@ export default function App() {
     const selectedMapping = Object.fromEntries(Object.entries(mapping).filter(([, source]) => source))
     const selectedCount = Object.keys(selectedMapping).length
     const next = { ...file, mapping: selectedMapping, missingFields: [], validation: selectedCount ? '校验通过' as const : '待映射' as const, updatedAt: new Date().toISOString() }
-    await saveFile(next)
-    await refreshData()
-    setSelectedFile(next)
+    const id = await updateFileMapping(next)
+    const stored = { ...next, id }
+    setFiles((current) => current.map((item) => item.slotId === stored.slotId ? stored : item))
+    setSelectedFile(stored)
     notify(selectedCount ? `已保存 ${selectedCount} 个字段映射` : '已保存为空映射；后续可随时重新选择', selectedCount ? 'success' : 'info')
   }
 
@@ -143,6 +146,7 @@ export default function App() {
 
   const runAnalysis = async () => {
     setRunning(true)
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
     try {
       const latestManualQuotes = await db.manualTransferQuotes.toArray()
       const valid = (slotId: StoredFile['slotId']) => files.find((file) => file.slotId === slotId && file.validation === '校验通过')
@@ -152,6 +156,7 @@ export default function App() {
       const forecast = parseForecast(forecastFile)
       const packaging = valid('packaging') ? parsePackaging(valid('packaging')!) : []
       const historic = buildHistory(files)
+      setHistory(historic)
       const addressRegion = new Map(addresses.filter((row) => row.confirmed).map((row) => [row.code, row.confirmedRegion!]))
       const warehouses = parseWarehouses(warehouseFile).map((row) => ({ ...row, region: addressRegion.get(row.code) ?? row.region }))
       const warehouseCodeByName = new Map(warehouses.map((row) => [row.name, row.code]))
@@ -175,7 +180,6 @@ export default function App() {
     finally { setRunning(false) }
   }
 
-  const history = useMemo(() => buildHistory(files), [files])
   const pageContent = page === 'files' ? <FileLibraryPage files={files} uploading={uploading} onUpload={handleUpload} onMap={(file) => { setSelectedFile(file); setPage('mapping') }} onClear={async () => { await db.transaction('rw', [db.files, db.results, db.manualTransferQuotes], async () => { await db.files.clear(); await db.results.clear(); await db.manualTransferQuotes.clear() }); await refreshData(); setSelectedFile(undefined); notify('本次分析文件、结果和自行询价已清空') }}/>
     : page === 'mapping' ? <MappingPage files={files} selected={selectedFile ?? files[0]} uploading={uploading} onSelect={setSelectedFile} onUpload={handleUpload} onSave={saveMapping}/>
     : page === 'quotes' ? <QuotePage quotes={quotes} aiSettings={aiSettings} busySlot={busySlot} onUpload={uploadQuote} onApply={applyQuote} onSaveAi={saveAiSettings} onTestAi={testAi}/>
@@ -203,4 +207,8 @@ function buildHistory(files: StoredFile[]): HistoricalSummary {
   if (all.length < 30) messages.push('共同日期区间内历史记录少于30条，受影响部分仅作提示')
   if (total && validAmount / total < .8) messages.push('有效邮编覆盖率低于80%，地区热力需谨慎使用')
   return { channelAmazonShare: total ? amountA / total : 0, channelMerchantShare: total ? amountM / total : 0, postcodeCoverage: total ? validAmount / total : 0, regionDemand: regions, commonDateRange: `${start} 至 ${end}`, messages }
+}
+
+function emptyHistoricalSummary(): HistoricalSummary {
+  return { channelAmazonShare: 0, channelMerchantShare: 0, postcodeCoverage: 0, regionDemand: { 美西: 0, 美中: 0, 美东: 0 }, messages: ['请完成历史出库数据映射并运行分析'] }
 }
