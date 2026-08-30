@@ -16,3 +16,16 @@
     width: 100%;
   }
 }
+
+.mapping-file-slot > button {
+  width: 100%;
+}
+
+.mapping-upload-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #2469d7;
+  font-size: 12px;
+  white-space: nowrap;
+}

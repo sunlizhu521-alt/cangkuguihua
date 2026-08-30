@@ -1,15 +1,18 @@
-import { useState } from 'react'
-import { Save, ShieldCheck } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { FileUp, Save, ShieldCheck } from 'lucide-react'
 import { fileSlots } from '../data'
-import type { StoredFile } from '../types'
+import type { FileSlotDefinition, StoredFile } from '../types'
 import { EmptyState, PageHeader, StatusTag } from '../components/Common'
 
-export default function MappingPage({ files, selected, onSelect, onSave }: {
+export default function MappingPage({ files, selected, uploading, onSelect, onUpload, onSave }: {
   files: StoredFile[]
   selected?: StoredFile
+  uploading?: string
   onSelect: (file: StoredFile) => void
+  onUpload: (definition: FileSlotDefinition, file: File) => void
   onSave: (file: StoredFile, mapping: Record<string, string>) => void
 }) {
+  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({})
   const definition = selected ? fileSlots.find((slot) => slot.id === selected.slotId) : undefined
   const fields = definition ? [...definition.requiredFields, ...definition.optionalFields] : []
   return <div className="page mapping-page">
@@ -18,7 +21,13 @@ export default function MappingPage({ files, selected, onSelect, onSave }: {
       <aside className="file-selector">
         {fileSlots.map((slot) => {
           const file = files.find((item) => item.slotId === slot.id)
-          return <button key={slot.id} disabled={!file} onClick={() => file && onSelect(file)} className={selected?.slotId === slot.id ? 'selected' : ''}><span>{slot.label}</span>{file ? <StatusTag tone={file.validation === '校验通过' ? 'success' : 'warning'}>{file.validation}</StatusTag> : <span className="muted">未上传</span>}</button>
+          return <div className="mapping-file-slot" key={slot.id}>
+            <input ref={(node) => { inputRefs.current[slot.id] = node }} hidden type="file" accept=".xlsx,.xls,.csv" onChange={(event) => { const next = event.target.files?.[0]; if (next) onUpload(slot, next); event.target.value = '' }} />
+            <button onClick={() => file ? onSelect(file) : inputRefs.current[slot.id]?.click()} className={selected?.slotId === slot.id ? 'selected' : ''}>
+              <span>{slot.label}</span>
+              {uploading === slot.id ? <span className="muted">读取中…</span> : file ? <StatusTag tone={file.validation === '校验通过' ? 'success' : 'warning'}>{file.validation}</StatusTag> : <span className="mapping-upload-hint"><FileUp size={14}/>点击上传</span>}
+            </button>
+          </div>
         })}
       </aside>
       <section className="mapping-panel">
