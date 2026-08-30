@@ -30,6 +30,7 @@ export interface StoredFile {
   updatedAt: string
   rowCount: number
   sheetNames: string[]
+  sourceSheetName?: string
   headers: string[]
   previewRows: Record<string, unknown>[]
   data: ArrayBuffer

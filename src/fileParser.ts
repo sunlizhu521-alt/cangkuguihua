@@ -36,11 +36,20 @@ export function normalizeDate(value: unknown): string {
   return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10)
 }
 
-function uniqueHeaders(row: unknown[]): string[] {
+const HEADER_SCAN_ROW_LIMIT = 200
+const HEADER_SCAN_COLUMN_LIMIT = 512
+
+function lastPopulatedColumn(row: unknown[]): number {
+  for (let column = row.length - 1; column >= 0; column -= 1) {
+    if (String(row[column] ?? '').trim() !== '') return column
+  }
+  return -1
+}
+
+function uniqueHeaders(row: unknown[], columnCount = row.length): string[] {
   const counts = new Map<string, number>()
-  let lastNamedColumn = row.length - 1
-  while (lastNamedColumn >= 0 && String(row[lastNamedColumn] ?? '').trim() === '') lastNamedColumn -= 1
-  return row.slice(0, lastNamedColumn + 1).map((value, column) => {
+  return Array.from({ length: columnCount }, (_, column) => {
+    const value = row[column]
     const base = String(value ?? '').trim() || `未命名列${column + 1}`
     const count = (counts.get(base) ?? 0) + 1
     counts.set(base, count)
@@ -49,9 +58,10 @@ function uniqueHeaders(row: unknown[]): string[] {
 }
 
 function pickHeaderRow(rows: unknown[][]): { headers: string[]; headerIndex: number } {
-  const headerIndex = rows.findIndex((row) => row.some((value) => String(value ?? '').trim() !== ''))
+  const headerIndex = rows.findIndex((row) => row.filter((value) => String(value ?? '').trim() !== '').length >= 2)
   if (headerIndex < 0) return { headers: [], headerIndex: 0 }
-  return { headers: uniqueHeaders(rows[headerIndex]), headerIndex }
+  const widestColumn = rows.slice(headerIndex, Math.min(rows.length, headerIndex + 10)).reduce((maximum, row) => Math.max(maximum, lastPopulatedColumn(row)), -1)
+  return { headers: uniqueHeaders(rows[headerIndex], widestColumn + 1), headerIndex }
 }
 
 function workbookFromData(data: ArrayBuffer, fileName: string) {
@@ -64,27 +74,39 @@ function workbookFromData(data: ArrayBuffer, fileName: string) {
 }
 
 function sheetBounds(sheet: XLSX.WorkSheet) {
-  return XLSX.utils.decode_range(sheet['!ref'] ?? 'A1:A1')
+  return sheet['!ref'] ? XLSX.utils.decode_range(sheet['!ref']) : undefined
 }
 
 function headerSample(sheet: XLSX.WorkSheet) {
   const bounds = sheetBounds(sheet)
+  if (!bounds) return []
   return XLSX.utils.sheet_to_json<unknown[]>(sheet, {
     header: 1,
     defval: '',
-    range: { s: { r: 0, c: 0 }, e: { r: Math.min(19, bounds.e.r), c: bounds.e.c } },
+    blankrows: true,
+    range: { s: { r: 0, c: 0 }, e: { r: Math.min(HEADER_SCAN_ROW_LIMIT - 1, bounds.e.r), c: Math.min(HEADER_SCAN_COLUMN_LIMIT - 1, bounds.e.c) } },
   })
+}
+
+function selectDataSheet(workbook: XLSX.WorkBook) {
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName]
+    if (!sheet) continue
+    const bounds = sheetBounds(sheet)
+    if (!bounds) continue
+    const { headers, headerIndex } = pickHeaderRow(headerSample(sheet))
+    if (headers.length >= 2 && bounds.e.r > headerIndex) return { sheetName, sheet, bounds, headers, headerIndex }
+  }
+  return undefined
 }
 
 export async function inspectWorkbook(file: File, definition: FileSlotDefinition): Promise<StoredFile> {
   const data = await file.arrayBuffer()
   const workbook = workbookFromData(data, file.name)
-  const sheetName = workbook.SheetNames[0]
-  if (!sheetName) throw new Error('文件中没有可读取的工作表')
-  const sheet = workbook.Sheets[sheetName]
-  const bounds = sheetBounds(sheet)
-  const { headers, headerIndex } = pickHeaderRow(headerSample(sheet))
-  if (!headers.length) throw new Error('第一个工作表没有可读取的标题行')
+  if (!workbook.SheetNames.length) throw new Error('文件中没有可读取的工作表')
+  const selectedSheet = selectDataSheet(workbook)
+  if (!selectedSheet) throw new Error('所有工作表中都没有找到至少包含两列、且下方有数据的标题行')
+  const { sheetName, sheet, bounds, headers, headerIndex } = selectedSheet
   const previewMatrix = bounds.e.r > headerIndex ? XLSX.utils.sheet_to_json<unknown[]>(sheet, {
     header: 1,
     defval: '',
@@ -98,6 +120,7 @@ export async function inspectWorkbook(file: File, definition: FileSlotDefinition
     updatedAt: new Date().toISOString(),
     rowCount: Math.max(0, bounds.e.r - headerIndex),
     sheetNames: workbook.SheetNames,
+    sourceSheetName: sheetName,
     headers,
     previewRows,
     data,
@@ -109,10 +132,16 @@ export async function inspectWorkbook(file: File, definition: FileSlotDefinition
 
 export function readMappedRows(file: StoredFile): Record<string, unknown>[] {
   const workbook = workbookFromData(file.data, file.fileName)
-  const sheet = workbook.Sheets[workbook.SheetNames[0]]
-  if (!sheet) return []
-  const bounds = sheetBounds(sheet)
-  const { headers, headerIndex } = pickHeaderRow(headerSample(sheet))
+  const selectedSheet = file.sourceSheetName && workbook.Sheets[file.sourceSheetName]
+    ? (() => {
+        const sheet = workbook.Sheets[file.sourceSheetName!]
+        const bounds = sheetBounds(sheet)
+        const picked = pickHeaderRow(headerSample(sheet))
+        return bounds && picked.headers.length ? { sheetName: file.sourceSheetName!, sheet, bounds, ...picked } : undefined
+      })()
+    : selectDataSheet(workbook)
+  if (!selectedSheet) return []
+  const { sheet, bounds, headers, headerIndex } = selectedSheet
   if (!headers.length || bounds.e.r <= headerIndex) return []
   const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
     header: 1,

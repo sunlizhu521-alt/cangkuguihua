@@ -41,7 +41,7 @@ function MappingEditor({ file, fields, onSave }: { file: StoredFile; fields: str
   const [mapping, setMapping] = useState<Record<string, string>>({ ...file.mapping })
   const selectedCount = Object.values(mapping).filter(Boolean).length
   return <div>
-    <div className="mapping-title"><div><h2>{file.fileName}</h2><p>来源工作表：{file.sheetNames.join('、')}</p></div><StatusTag tone={file.validation === '校验通过' ? 'success' : 'warning'}>{file.validation}</StatusTag></div>
+    <div className="mapping-title"><div><h2>{file.fileName}</h2><p>读取工作表：{file.sourceSheetName ?? file.sheetNames[0] ?? '未识别'}{file.sheetNames.length > 1 ? `（文件共 ${file.sheetNames.length} 个工作表）` : ''}</p></div><StatusTag tone={file.validation === '校验通过' ? 'success' : 'warning'}>{file.validation}</StatusTag></div>
     <div className="info-banner"><ShieldCheck size={18}/>没有必填项，也不会自动替你选择来源列；你可以只映射本次要使用的字段。</div>
     <div className="mapping-grid header"><span>系统标准字段</span><span>来源文件列</span><span>状态</span></div>
     {fields.map((field) => <div className="mapping-grid" key={field}>
@@ -50,7 +50,7 @@ function MappingEditor({ file, fields, onSave }: { file: StoredFile; fields: str
       <StatusTag tone={mapping[field] ? 'success' : 'neutral'}>{mapping[field] ? '已选择' : '未选择'}</StatusTag>
     </div>)}
     <div className="mapping-actions"><span className="muted">已选择 {selectedCount} 个字段</span><button className="button primary" onClick={() => onSave(file, mapping)}><Save size={17}/>保存映射</button></div>
-    <h3 className="preview-title">数据预览（前5行）</h3>
-    <div className="table-frame preview-table"><table><thead><tr>{file.headers.slice(0, 8).map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{file.previewRows.slice(0, 5).map((row, index) => <tr key={index}>{file.headers.slice(0, 8).map((header) => <td key={header}>{String(row[header] ?? '')}</td>)}</tr>)}</tbody></table></div>
+    <h3 className="preview-title">数据预览（前5行，完整列）</h3>
+    <div className="table-frame preview-table"><table><thead><tr>{file.headers.map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{file.previewRows.slice(0, 5).map((row, index) => <tr key={index}>{file.headers.map((header) => <td key={header}>{String(row[header] ?? '')}</td>)}</tr>)}</tbody></table></div>
   </div>
 }

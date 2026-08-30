@@ -67,7 +67,7 @@ describe('库存字段解析', () => {
 })
 
 describe('工作簿标题行解析', () => {
-  it('第一条非空行作为标题，不会被列数更多的数据行替换', async () => {
+  it('第一条有效行作为标题，数据中的额外列保留为未命名列', async () => {
     const workbook = XLSX.utils.book_new()
     const sheet = XLSX.utils.aoa_to_sheet([
       ['商品编码', '数量'],
@@ -81,9 +81,57 @@ describe('工作簿标题行解析', () => {
 
     const inspected = await inspectWorkbook(file, definition)
 
-    expect(inspected.headers).toEqual(['商品编码', '数量'])
+    expect(inspected.headers).toEqual(['商品编码', '数量', '未命名列3'])
     expect(inspected.rowCount).toBe(2)
-    expect(inspected.previewRows[0]).toEqual({ 商品编码: '商品一', 数量: 2 })
+    expect(inspected.previewRows[0]).toEqual({ 商品编码: '商品一', 数量: 2, 未命名列3: '额外数据' })
+  })
+
+  it('第一个工作表为空时自动读取后续含标题和数据的工作表', async () => {
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([]), '说明')
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+      ['商品编码', '数量'],
+      ['商品一', 2],
+    ]), '销售出库')
+    const data = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
+    const file = { name: '多工作表.xlsx', arrayBuffer: async () => data } as File
+    const definition = fileSlots.find((slot) => slot.id === 'merchantOutbound')!
+
+    const inspected = await inspectWorkbook(file, definition)
+
+    expect(inspected.sourceSheetName).toBe('销售出库')
+    expect(inspected.headers).toEqual(['商品编码', '数量'])
+  })
+
+  it('标题行中有空标题时仍按数据实际宽度保留完整列', async () => {
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+      ['商品编码', '数量', ''],
+      ['商品一', 2, '额外内容'],
+    ]), '出库')
+    const data = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
+    const file = { name: '空标题列.xlsx', arrayBuffer: async () => data } as File
+    const definition = fileSlots.find((slot) => slot.id === 'amazonOutbound')!
+
+    const inspected = await inspectWorkbook(file, definition)
+
+    expect(inspected.headers).toEqual(['商品编码', '数量', '未命名列3'])
+    expect(inspected.previewRows[0]['未命名列3']).toBe('额外内容')
+  })
+
+  it('标题位于第20行之后时仍可以识别', async () => {
+    const workbook = XLSX.utils.book_new()
+    const rows = Array.from({ length: 25 }, () => [] as unknown[])
+    rows.push(['商品编码', '数量'], ['商品一', 2])
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), '出库')
+    const data = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
+    const file = { name: '标题靠后.xlsx', arrayBuffer: async () => data } as File
+    const definition = fileSlots.find((slot) => slot.id === 'merchantOutbound')!
+
+    const inspected = await inspectWorkbook(file, definition)
+
+    expect(inspected.headers).toEqual(['商品编码', '数量'])
+    expect(inspected.rowCount).toBe(1)
   })
 })
 
