@@ -76,7 +76,7 @@ export default function App() {
       await refreshData()
       setSelectedFile(inspected)
       setPage('mapping')
-      notify('文件已读取，请自由选择本次需要映射的字段', 'info')
+      notify(`已读取“${inspected.sourceSheetName ?? inspected.sheetNames[0] ?? '未识别工作表'}”：${inspected.headers.length} 列、${inspected.rowCount.toLocaleString('zh-CN')} 行，请选择需要映射的字段`, 'info')
     } catch (error) { notify(error instanceof Error ? error.message : '文件读取失败', 'danger') }
     finally { setUploading(undefined) }
   }

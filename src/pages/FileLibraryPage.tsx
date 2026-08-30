@@ -7,7 +7,7 @@ import { PageHeader, StatusTag } from '../components/Common'
 export default function FileLibraryPage({ files, uploading, onUpload, onMap, onClear }: {
   files: StoredFile[]
   uploading?: string
-  onUpload: (definition: FileSlotDefinition, file: File) => void
+  onUpload: (definition: FileSlotDefinition, file: File) => Promise<void>
   onMap: (file: StoredFile) => void
   onClear: () => void
 }) {
@@ -29,8 +29,8 @@ export default function FileLibraryPage({ files, uploading, onUpload, onMap, onC
               <td>{file ? <StatusTag tone={file.validation === '校验通过' ? 'success' : 'warning'}>{file.validation === '校验通过' ? '已映射' : '待映射'}</StatusTag> : <StatusTag tone="neutral">待上传</StatusTag>}</td>
               <td>{file ? <StatusTag tone={file.validation === '校验通过' ? 'success' : 'neutral'}>{file.validation === '校验通过' ? '已保存选择' : '未选择字段'}</StatusTag> : '—'}</td>
               <td className="actions-cell">
-                <input ref={(node) => { inputRefs.current[slot.id] = node }} hidden type="file" accept=".xlsx,.xls,.csv" onChange={(event) => { const next = event.target.files?.[0]; if (next) onUpload(slot, next); event.target.value = '' }} />
-                <button className="link-button" onClick={() => inputRefs.current[slot.id]?.click()}>{uploading === slot.id ? '读取中…' : file ? '替换文件' : '上传文件'}</button>
+                <input aria-label={`${slot.label}文件选择`} ref={(node) => { inputRefs.current[slot.id] = node }} hidden type="file" accept=".xlsx,.xls,.csv" onChange={async (event) => { const input = event.currentTarget; const next = input.files?.[0]; try { if (next) await onUpload(slot, next) } finally { input.value = '' } }} />
+                <button disabled={Boolean(uploading)} className="link-button" onClick={() => inputRefs.current[slot.id]?.click()}>{uploading === slot.id ? '读取中…' : file ? '替换文件' : '上传文件'}</button>
                 {file ? <button className="link-button" onClick={() => onMap(file)}><Eye size={14}/>查看映射</button> : null}
               </td>
             </tr>

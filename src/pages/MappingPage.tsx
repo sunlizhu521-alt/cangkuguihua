@@ -9,7 +9,7 @@ export default function MappingPage({ files, selected, uploading, onSelect, onUp
   selected?: StoredFile
   uploading?: string
   onSelect: (file: StoredFile) => void
-  onUpload: (definition: FileSlotDefinition, file: File) => void
+  onUpload: (definition: FileSlotDefinition, file: File) => Promise<void>
   onSave: (file: StoredFile, mapping: Record<string, string>) => void
 }) {
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({})
@@ -22,8 +22,8 @@ export default function MappingPage({ files, selected, uploading, onSelect, onUp
         {fileSlots.map((slot) => {
           const file = files.find((item) => item.slotId === slot.id)
           return <div className="mapping-file-slot" key={slot.id}>
-            <input ref={(node) => { inputRefs.current[slot.id] = node }} hidden type="file" accept=".xlsx,.xls,.csv" onChange={(event) => { const next = event.target.files?.[0]; if (next) onUpload(slot, next); event.target.value = '' }} />
-            <button onClick={() => file ? onSelect(file) : inputRefs.current[slot.id]?.click()} className={selected?.slotId === slot.id ? 'selected' : ''}>
+            <input aria-label={`${slot.label}文件选择`} ref={(node) => { inputRefs.current[slot.id] = node }} hidden type="file" accept=".xlsx,.xls,.csv" onChange={async (event) => { const input = event.currentTarget; const next = input.files?.[0]; try { if (next) await onUpload(slot, next) } finally { input.value = '' } }} />
+            <button disabled={Boolean(uploading)} onClick={() => file ? onSelect(file) : inputRefs.current[slot.id]?.click()} className={selected?.slotId === slot.id ? 'selected' : ''}>
               <span>{slot.label}</span>
               {uploading === slot.id ? <span className="muted">读取中…</span> : file ? <StatusTag tone={file.validation === '校验通过' ? 'success' : 'warning'}>{file.validation}</StatusTag> : <span className="mapping-upload-hint"><FileUp size={14}/>点击上传</span>}
             </button>
@@ -41,7 +41,7 @@ function MappingEditor({ file, fields, onSave }: { file: StoredFile; fields: str
   const [mapping, setMapping] = useState<Record<string, string>>({ ...file.mapping })
   const selectedCount = Object.values(mapping).filter(Boolean).length
   return <div>
-    <div className="mapping-title"><div><h2>{file.fileName}</h2><p>读取工作表：{file.sourceSheetName ?? file.sheetNames[0] ?? '未识别'}{file.sheetNames.length > 1 ? `（文件共 ${file.sheetNames.length} 个工作表）` : ''}</p></div><StatusTag tone={file.validation === '校验通过' ? 'success' : 'warning'}>{file.validation}</StatusTag></div>
+    <div className="mapping-title"><div><h2>{file.fileName}</h2><p>读取工作表：{file.sourceSheetName ?? file.sheetNames[0] ?? '未识别'}{file.sheetNames.length > 1 ? `（文件共 ${file.sheetNames.length} 个工作表）` : ''} · 已识别 {file.headers.length} 列 · 数据 {file.rowCount.toLocaleString('zh-CN')} 行</p></div><StatusTag tone={file.validation === '校验通过' ? 'success' : 'warning'}>{file.validation}</StatusTag></div>
     <div className="info-banner"><ShieldCheck size={18}/>没有必填项，也不会自动替你选择来源列；你可以只映射本次要使用的字段。</div>
     <div className="mapping-grid header"><span>系统标准字段</span><span>来源文件列</span><span>状态</span></div>
     {fields.map((field) => <div className="mapping-grid" key={field}>
