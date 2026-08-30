@@ -72,7 +72,7 @@ function singleOrderRate(rules: FeeRule[], warehouseCode: string) {
 function simulatePlan(initial: InventoryRecord[], transferQuantity: number, origin: string, destination: string, transitDays: number, dailyForecast: number, rules: FeeRule[], settings: AnalysisSettings, merchantShare: number, volumePerUnit: number, weightPerUnit: number, unitsPerCarton: number) {
   const quality = new Set<string>()
   const batches: Batch[] = initial.map((row) => ({ warehouseCode: row.warehouseCode, quantity: row.quantity, ageDays: row.inventoryStatus === '在途' ? 0 : knownAge(row, settings.baseDate), arrivalDay: row.inventoryStatus === '在途' ? row.expectedArrivalDate ? Math.max(0, Math.ceil((new Date(row.expectedArrivalDate).getTime() - new Date(settings.baseDate).getTime()) / 86_400_000)) : settings.analysisDays + 1 : 0 }))
-  if (initial.some((row) => row.inventoryStatus === '在途' && !row.expectedArrivalDate)) quality.add('存在缺少预计到仓日期的在途成品，分析期内暂不计入可用库存')
+  if (initial.some((row) => row.inventoryStatus === '在途' && !row.expectedArrivalDate)) quality.add('在途量不参与调拨，当前按分析期内不可用库存处理')
   batches.filter((batch) => batch.arrivalDay === 0 && batch.ageDays === undefined).forEach(() => quality.add('缺少批次日期或库存存放天数，无法判断对应仓储阶梯'))
   if (transferQuantity > 0) {
     let remaining = transferQuantity

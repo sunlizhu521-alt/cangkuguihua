@@ -13,7 +13,7 @@ export default function FileLibraryPage({ files, uploading, onUpload, onMap, onC
 }) {
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({})
   return <div className="page">
-    <PageHeader title="文件库" description="每个槽位仅保留最新文件，业务数据只保存在本机浏览器" actions={<><button className="button secondary" onClick={onClear}><Trash2 size={17}/>清空本次分析</button></>} />
+    <PageHeader title="文件库" description="任意选择文件槽位、任意顺序上传；每个槽位仅保留最新文件" actions={<><button className="button secondary" onClick={onClear}><Trash2 size={17}/>清空本次分析</button></>} />
     {(['事实表', '维度表'] as const).map((group) => <section className="section" key={group}>
       <h2>{group}</h2>
       <div className="table-frame">
@@ -27,7 +27,7 @@ export default function FileLibraryPage({ files, uploading, onUpload, onMap, onC
               <td>{file ? new Date(file.updatedAt).toLocaleString('zh-CN') : '—'}</td>
               <td>{file ? file.rowCount.toLocaleString('zh-CN') : '—'}</td>
               <td>{file ? <StatusTag tone={file.validation === '校验通过' ? 'success' : 'warning'}>{file.validation === '校验通过' ? '已映射' : '待映射'}</StatusTag> : <StatusTag tone="neutral">待上传</StatusTag>}</td>
-              <td>{file ? <StatusTag tone={file.validation === '校验通过' ? 'success' : 'danger'}>{file.validation}</StatusTag> : '—'}</td>
+              <td>{file ? <StatusTag tone={file.validation === '校验通过' ? 'success' : 'neutral'}>{file.validation === '校验通过' ? '已保存选择' : '未选择字段'}</StatusTag> : '—'}</td>
               <td className="actions-cell">
                 <input ref={(node) => { inputRefs.current[slot.id] = node }} hidden type="file" accept=".xlsx,.xls,.csv" onChange={(event) => { const next = event.target.files?.[0]; if (next) onUpload(slot, next); event.target.value = '' }} />
                 <button className="link-button" onClick={() => inputRefs.current[slot.id]?.click()}>{uploading === slot.id ? '读取中…' : file ? '替换文件' : '上传文件'}</button>

@@ -1,0 +1,18 @@
+@media (max-width: 800px) {
+  .mapping-layout,
+  .file-selector,
+  .mapping-panel,
+  .mapping-grid {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .mapping-panel {
+    overflow: hidden;
+  }
+
+  .mapping-grid select {
+    min-width: 0;
+    width: 100%;
+  }
+}

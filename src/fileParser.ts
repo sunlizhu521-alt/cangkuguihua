@@ -46,19 +46,14 @@ function pickHeaderRow(rows: unknown[][]): { headers: string[]; headerIndex: num
 
 export async function inspectWorkbook(file: File, definition: FileSlotDefinition): Promise<StoredFile> {
   const data = await file.arrayBuffer()
-  const workbook = XLSX.read(data, { type: 'array', cellDates: true })
+  const isCsv = file.name.toLowerCase().endsWith('.csv')
+  const workbook = XLSX.read(isCsv ? new TextDecoder('utf-8').decode(data) : data, { type: isCsv ? 'string' : 'array', cellDates: true })
   const sheetName = workbook.SheetNames[0]
   const matrix = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[sheetName], { header: 1, defval: '' })
   const { headers, headerIndex } = pickHeaderRow(matrix)
   const rows = matrix.slice(headerIndex + 1).filter((row) => row.some((value) => String(value ?? '').trim() !== ''))
   const previewRows = rows.slice(0, 8).map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ''])))
   const automaticMapping: Record<string, string> = {}
-  for (const standard of [...definition.requiredFields, ...definition.optionalFields]) {
-    const direct = headers.find((header) => header === standard)
-    const fuzzy = headers.find((header) => header.includes(standard) || standard.includes(header))
-    if (direct || fuzzy) automaticMapping[standard] = direct ?? fuzzy!
-  }
-  const missingFields = definition.requiredFields.filter((field) => !automaticMapping[field])
   return {
     slotId: definition.id,
     fileName: file.name,
@@ -69,13 +64,14 @@ export async function inspectWorkbook(file: File, definition: FileSlotDefinition
     previewRows,
     data,
     mapping: automaticMapping,
-    validation: missingFields.length ? '有缺失字段' : '校验通过',
-    missingFields,
+    validation: '待映射',
+    missingFields: [],
   }
 }
 
 export function readMappedRows(file: StoredFile): Record<string, unknown>[] {
-  const workbook = XLSX.read(file.data, { type: 'array', cellDates: true })
+  const isCsv = file.fileName.toLowerCase().endsWith('.csv')
+  const workbook = XLSX.read(isCsv ? new TextDecoder('utf-8').decode(file.data) : file.data, { type: isCsv ? 'string' : 'array', cellDates: true })
   const sheet = workbook.Sheets[workbook.SheetNames[0]]
   const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' })
   const { headers, headerIndex } = pickHeaderRow(matrix)
@@ -88,18 +84,20 @@ export function readMappedRows(file: StoredFile): Record<string, unknown>[] {
 }
 
 export function parseInventory(file: StoredFile): InventoryRecord[] {
-  return readMappedRows(file).map((row) => ({
-    warehouseCode: String(row['仓库编码'] ?? row['仓库名称'] ?? '').trim(),
-    warehouseName: String(row['仓库名称'] ?? '').trim(),
-    productCode: String(row['商品编码'] ?? '').trim(),
-    series: String(row['销售系列'] ?? '').trim(),
-    quantity: normalizeNumber(row['数量']),
-    inventoryStatus: (String(row['库存状态']).includes('途') ? '在途' : '在库') as InventoryRecord['inventoryStatus'],
-    productType: (String(row['商品类型']).includes('退') ? '退货' : String(row['商品类型']).includes('配') ? '配件' : '成品') as InventoryRecord['productType'],
-    inboundDate: normalizeDate(row['入库日期']),
-    ageDays: normalizeNumber(row['库存存放天数']) || undefined,
-    expectedArrivalDate: normalizeDate(row['预计到仓日期']),
-  })).filter((row) => row.warehouseName && row.productCode && row.quantity > 0)
+  const hasInStockMapping = Boolean(file.mapping['在库量'])
+  const hasInTransitMapping = Boolean(file.mapping['在途量'])
+  return readMappedRows(file).flatMap((row) => {
+    const warehouseName = String(row['仓库名称'] ?? '').trim()
+    const productCode = String(row['商品编码'] ?? '').trim()
+    if (!warehouseName || !productCode) return []
+    const inStockQuantity = hasInStockMapping || hasInTransitMapping ? normalizeNumber(row['在库量']) : normalizeNumber(row['数量'])
+    const inTransitQuantity = normalizeNumber(row['在途量'])
+    const shared = { warehouseCode: warehouseName, warehouseName, productCode, series: productCode, productType: '成品' as const }
+    return [
+      ...(inStockQuantity > 0 ? [{ ...shared, quantity: inStockQuantity, inventoryStatus: '在库' as const, ageDays: 0 }] : []),
+      ...(inTransitQuantity > 0 ? [{ ...shared, quantity: inTransitQuantity, inventoryStatus: '在途' as const }] : []),
+    ]
+  })
 }
 
 export function parseForecast(file: StoredFile): ForecastRecord[] {
@@ -147,9 +145,11 @@ export function parseWarehouses(file: StoredFile): WarehouseRecord[] {
   return readMappedRows(file).map((row) => {
     const state = String(row['州'] ?? '').trim().toUpperCase()
     const region = String(row['所属区域'] ?? '') as WarehouseRegion
+    const code = String(row['仓库编码'] ?? row['仓库名称'] ?? '').trim()
+    const name = String(row['仓库名称'] ?? row['仓库编码'] ?? '').trim()
     return {
-      code: String(row['仓库编码'] ?? '').trim(),
-      name: String(row['仓库名称'] ?? '').trim(),
+      code,
+      name,
       region: ['美西', '美中', '美东'].includes(region) ? region : stateRegions[state] ?? '美中',
     }
   }).filter((row) => row.code && row.name)

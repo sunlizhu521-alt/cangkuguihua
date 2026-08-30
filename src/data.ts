@@ -1,17 +1,17 @@
 import type { AnalysisSettings, FileSlotDefinition, QuoteVersion, WarehouseAddress } from './types'
 
 export const fileSlots: FileSlotDefinition[] = [
-  { id: 'inventory', label: '库存数据', group: '事实表', requiredFields: ['仓库名称', '商品编码', '销售系列', '数量', '库存状态', '商品类型'], optionalFields: ['仓库编码', '入库日期', '库存存放天数', '预计到仓日期'] },
-  { id: 'forecast', label: '销售预测', group: '事实表', requiredFields: ['销售系列'], optionalFields: ['商品编码', '预测数量', '预测期间天数', '未来第1期预测数量', '未来第1期天数', '未来第2期预测数量', '未来第2期天数', '未来第3期预测数量', '未来第3期天数', '未来第4期预测数量', '未来第4期天数', '未来第5期预测数量', '未来第5期天数', '未来第6期预测数量', '未来第6期天数', '预测开始日期', '预测结束日期'] },
-  { id: 'sales', label: '销售数据', group: '事实表', requiredFields: ['商品编码', '销售系列', '日期', '数量'], optionalFields: ['渠道', '订单状态'] },
-  { id: 'amazonOutbound', label: '亚马逊仓配出库数据', group: '事实表', requiredFields: ['商品编码', '销售系列', '出库日期', '邮编', '数量', '订单状态'], optionalFields: ['仓库名称'] },
-  { id: 'merchantOutbound', label: '商家自发货出库数据', group: '事实表', requiredFields: ['商品编码', '销售系列', '出库日期', '邮编', '数量', '订单状态'], optionalFields: ['仓库名称'] },
-  { id: 'product', label: '商品维度', group: '维度表', requiredFields: ['商品编码', '销售系列', '商品名称'], optionalFields: ['品类'] },
-  { id: 'warehouse', label: '仓库维度', group: '维度表', requiredFields: ['仓库编码', '仓库名称'], optionalFields: ['州', '城市', '详细地址', '邮编', '所属区域'] },
-  { id: 'packaging', label: '商品包装参数', group: '维度表', requiredFields: ['商品编码', '包装长（厘米）', '包装宽（厘米）', '包装高（厘米）', '毛重（千克）', '每箱件数'], optionalFields: [] },
-  { id: 'listingMaterial', label: '领星商品编码匹配物料编码', group: '维度表', requiredFields: ['领星商品编码', '物料编码'], optionalFields: [] },
-  { id: 'customerMaterial', label: '客户与物料对照表', group: '维度表', requiredFields: ['客户编码', '物料编码'], optionalFields: ['客户商品编码'] },
-  { id: 'warehouseMaterial', label: '仓库与物料对照表', group: '维度表', requiredFields: ['仓库编码', '物料编码'], optionalFields: ['仓库商品编码'] },
+  { id: 'inventory', label: '库存数据', group: '事实表', requiredFields: [], optionalFields: ['仓库名称', '商品编码', '数量', '在库量', '在途量'] },
+  { id: 'forecast', label: '销售预测', group: '事实表', requiredFields: [], optionalFields: ['销售系列', '商品编码', '预测数量', '预测期间天数', '未来第1期预测数量', '未来第1期天数', '未来第2期预测数量', '未来第2期天数', '未来第3期预测数量', '未来第3期天数', '未来第4期预测数量', '未来第4期天数', '未来第5期预测数量', '未来第5期天数', '未来第6期预测数量', '未来第6期天数', '预测开始日期', '预测结束日期'] },
+  { id: 'sales', label: '销售数据', group: '事实表', requiredFields: [], optionalFields: ['商品编码', '销售系列', '日期', '数量', '渠道', '订单状态'] },
+  { id: 'amazonOutbound', label: '亚马逊仓配出库数据', group: '事实表', requiredFields: [], optionalFields: ['商品编码', '销售系列', '出库日期', '邮编', '数量', '订单状态', '仓库名称'] },
+  { id: 'merchantOutbound', label: '商家自发货出库数据', group: '事实表', requiredFields: [], optionalFields: ['商品编码', '销售系列', '出库日期', '邮编', '数量', '订单状态', '仓库名称'] },
+  { id: 'product', label: '商品维度', group: '维度表', requiredFields: [], optionalFields: ['商品编码', '销售系列', '商品名称', '品类'] },
+  { id: 'warehouse', label: '仓库维度', group: '维度表', requiredFields: [], optionalFields: ['仓库编码', '仓库名称', '州', '城市', '详细地址', '邮编', '所属区域'] },
+  { id: 'packaging', label: '商品包装参数', group: '维度表', requiredFields: [], optionalFields: ['商品编码', '包装长（厘米）', '包装宽（厘米）', '包装高（厘米）', '毛重（千克）', '每箱件数'] },
+  { id: 'listingMaterial', label: '领星商品编码匹配物料编码', group: '维度表', requiredFields: [], optionalFields: ['领星商品编码', '物料编码'] },
+  { id: 'customerMaterial', label: '客户与物料对照表', group: '维度表', requiredFields: [], optionalFields: ['客户编码', '物料编码', '客户商品编码'] },
+  { id: 'warehouseMaterial', label: '仓库与物料对照表', group: '维度表', requiredFields: [], optionalFields: ['仓库编码', '物料编码', '仓库商品编码'] },
 ]
 
 export const defaultAnalysisSettings: AnalysisSettings = {

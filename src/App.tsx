@@ -5,9 +5,9 @@ import MappingPage from './pages/MappingPage'
 import QuotePage from './pages/QuotePage'
 import ResultsPage, { type HistoricalSummary } from './pages/ResultsPage'
 import SettingsPage from './pages/SettingsPage'
-import { defaultAddresses, defaultAnalysisSettings, defaultQuoteSlots, fileSlots, stateRegions } from './data'
+import { defaultAddresses, defaultAnalysisSettings, defaultQuoteSlots, stateRegions } from './data'
 import { db, getSetting, saveFile, saveQuote, settingKeys, setSetting } from './storage'
-import { inspectWorkbook, localQuoteDraft, parseForecast, parseInventory, parseOutbound, parsePackaging, parseWarehouses, postalRegion } from './fileParser'
+import { inspectWorkbook, localQuoteDraft, parseForecast, parseInventory, parseOutbound, parsePackaging, parseWarehouses, postalRegion, readMappedRows } from './fileParser'
 import { optimizeTransfers } from './analysis'
 import { parseQuoteWithAi, testAiConnection } from './ai'
 import { exportAnalysisWorkbook } from './exportExcel'
@@ -76,19 +76,19 @@ export default function App() {
       await refreshData()
       setSelectedFile(inspected)
       setPage('mapping')
-      notify(inspected.validation === '校验通过' ? '文件已读取并自动完成字段映射' : '文件已读取，请补充缺失字段映射', inspected.validation === '校验通过' ? 'success' : 'info')
+      notify('文件已读取，请自由选择本次需要映射的字段', 'info')
     } catch (error) { notify(error instanceof Error ? error.message : '文件读取失败', 'danger') }
     finally { setUploading(undefined) }
   }
 
   const saveMapping = async (file: StoredFile, mapping: Record<string, string>) => {
-    const definition = fileSlots.find((slot) => slot.id === file.slotId)!
-    const missingFields = definition.requiredFields.filter((field) => !mapping[field])
-    const next = { ...file, mapping, missingFields, validation: missingFields.length ? '有缺失字段' as const : '校验通过' as const, updatedAt: new Date().toISOString() }
+    const selectedMapping = Object.fromEntries(Object.entries(mapping).filter(([, source]) => source))
+    const selectedCount = Object.keys(selectedMapping).length
+    const next = { ...file, mapping: selectedMapping, missingFields: [], validation: selectedCount ? '校验通过' as const : '待映射' as const, updatedAt: new Date().toISOString() }
     await saveFile(next)
     await refreshData()
     setSelectedFile(next)
-    notify(missingFields.length ? `仍缺少：${missingFields.join('、')}` : '字段映射已保存并通过校验', missingFields.length ? 'danger' : 'success')
+    notify(selectedCount ? `已保存 ${selectedCount} 个字段映射` : '已保存为空映射；后续可随时重新选择', selectedCount ? 'success' : 'info')
   }
 
   const uploadQuote = async (slot: 1 | 2 | 3 | 4, file: File, company: string, version: string, effectiveDate: string, useAi: boolean) => {
@@ -148,12 +148,16 @@ export default function App() {
       const valid = (slotId: StoredFile['slotId']) => files.find((file) => file.slotId === slotId && file.validation === '校验通过')
       const inventoryFile = valid('inventory'), forecastFile = valid('forecast'), warehouseFile = valid('warehouse')
       if (!inventoryFile || !forecastFile || !warehouseFile) throw new Error('库存数据、销售预测和仓库维度必须上传、映射并通过校验')
-      const inventory = parseInventory(inventoryFile)
+      let inventory = parseInventory(inventoryFile)
       const forecast = parseForecast(forecastFile)
       const packaging = valid('packaging') ? parsePackaging(valid('packaging')!) : []
       const historic = buildHistory(files)
       const addressRegion = new Map(addresses.filter((row) => row.confirmed).map((row) => [row.code, row.confirmedRegion!]))
       const warehouses = parseWarehouses(warehouseFile).map((row) => ({ ...row, region: addressRegion.get(row.code) ?? row.region }))
+      const warehouseCodeByName = new Map(warehouses.map((row) => [row.name, row.code]))
+      const productFile = valid('product')
+      const seriesByProduct = new Map(productFile ? readMappedRows(productFile).map((row) => [String(row['商品编码'] ?? '').trim(), String(row['销售系列'] ?? '').trim()]) : [])
+      inventory = inventory.map((row) => ({ ...row, warehouseCode: warehouseCodeByName.get(row.warehouseName) ?? row.warehouseName, series: seriesByProduct.get(row.productCode) || row.productCode }))
       const activePackages = quotes.filter((quote) => quote.status === '已应用' && quote.activeRules.length)
       const packages = activePackages.length ? activePackages : [{ ...defaultQuoteSlots[0], logisticsCompany: '未配置物流商报价' }]
       const candidates = packages.flatMap((quote) => optimizeTransfers({ inventory, forecast, packaging, warehouses, activeRules: quote.activeRules, manualQuotes: latestManualQuotes, settings: analysisSettings, merchantDemandShare: historic.commonDateRange ? historic.channelMerchantShare : 1 }).map((row) => ({ ...row, transferResource: row.transferResource === '物流商中转' ? `${quote.logisticsCompany}中转` : row.transferResource, decision: historic.commonDateRange ? row.decision : '待补数据' as const, transferQuantity: historic.commonDateRange ? row.transferQuantity : 0, transferRatio: historic.commonDateRange ? row.transferRatio : 0, dataQualityMessages: [...row.dataQualityMessages, ...(quote.activeRules.length ? [] : ['尚未应用仓库报价，费用结果仅供数据检查']), ...(historic.commonDateRange ? [] : ['历史出库共同区间不足，不生成正式调拨建议'])] })))
