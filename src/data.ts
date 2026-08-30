@@ -7,11 +7,11 @@ export const fileSlots: FileSlotDefinition[] = [
   { id: 'amazonOutbound', label: '亚马逊仓配出库数据', group: '事实表', requiredFields: [], optionalFields: ['商品编码', '销售系列', '出库日期', '邮编', '数量', '订单状态', '仓库名称'] },
   { id: 'merchantOutbound', label: '商家自发货出库数据', group: '事实表', requiredFields: [], optionalFields: ['商品编码', '销售系列', '出库日期', '邮编', '数量', '订单状态', '仓库名称'] },
   { id: 'product', label: '商品维度', group: '维度表', requiredFields: [], optionalFields: ['商品编码', '销售系列', '商品名称', '品类'] },
-  { id: 'warehouse', label: '仓库维度', group: '维度表', requiredFields: [], optionalFields: ['仓库编码', '仓库名称', '州', '城市', '详细地址', '邮编', '所属区域'] },
+  { id: 'warehouse', label: '仓库维度', group: '维度表', requiredFields: [], optionalFields: ['使用组织', '仓库', '一级仓库分类', '州', '城市', '详细地址', '邮编', '所属区域'] },
   { id: 'packaging', label: '商品包装参数', group: '维度表', requiredFields: [], optionalFields: ['商品编码', '包装长（厘米）', '包装宽（厘米）', '包装高（厘米）', '毛重（千克）', '每箱件数'] },
   { id: 'listingMaterial', label: '领星商品编码匹配物料编码', group: '维度表', requiredFields: [], optionalFields: ['领星商品编码', '物料编码'] },
-  { id: 'customerMaterial', label: '客户与物料对照表', group: '维度表', requiredFields: [], optionalFields: ['客户编码', '物料编码', '客户商品编码'] },
-  { id: 'warehouseMaterial', label: '仓库与物料对照表', group: '维度表', requiredFields: [], optionalFields: ['仓库编码', '物料编码', '仓库商品编码'] },
+  { id: 'customerMaterial', label: '客户与物料对照表', group: '维度表', requiredFields: [], optionalFields: ['事业部', '客户名称', '物料编码'] },
+  { id: 'warehouseMaterial', label: '仓库与物料对照表', group: '维度表', requiredFields: [], optionalFields: ['事业部', '仓库名称', '物料编码'] },
 ]
 
 export const defaultAnalysisSettings: AnalysisSettings = {

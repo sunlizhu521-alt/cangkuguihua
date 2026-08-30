@@ -25,40 +25,78 @@ export function normalizeNumber(value: unknown): number {
 }
 
 export function normalizeDate(value: unknown): string {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10)
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
   if (typeof value === 'number') {
     const parsed = XLSX.SSF.parse_date_code(value)
     if (parsed) return `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`
   }
+  const calendarDate = String(value ?? '').trim().match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/)
+  if (calendarDate) return `${calendarDate[1]}-${calendarDate[2].padStart(2, '0')}-${calendarDate[3].padStart(2, '0')}`
   const date = new Date(String(value ?? ''))
   return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10)
 }
 
-function pickHeaderRow(rows: unknown[][]): { headers: string[]; headerIndex: number } {
-  let best: { headers: string[]; headerIndex: number; score: number } = { headers: [], headerIndex: 0, score: -1 }
-  rows.slice(0, 20).forEach((row, index) => {
-    const headers = row.map((value, column) => String(value ?? '').trim() || `未命名列${column + 1}`)
-    const score = headers.filter((value) => !value.startsWith('未命名列')).length
-    if (score > best.score) best = { headers, headerIndex: index, score }
+function uniqueHeaders(row: unknown[]): string[] {
+  const counts = new Map<string, number>()
+  let lastNamedColumn = row.length - 1
+  while (lastNamedColumn >= 0 && String(row[lastNamedColumn] ?? '').trim() === '') lastNamedColumn -= 1
+  return row.slice(0, lastNamedColumn + 1).map((value, column) => {
+    const base = String(value ?? '').trim() || `未命名列${column + 1}`
+    const count = (counts.get(base) ?? 0) + 1
+    counts.set(base, count)
+    return count === 1 ? base : `${base}（${count}）`
   })
-  return best
+}
+
+function pickHeaderRow(rows: unknown[][]): { headers: string[]; headerIndex: number } {
+  const headerIndex = rows.findIndex((row) => row.some((value) => String(value ?? '').trim() !== ''))
+  if (headerIndex < 0) return { headers: [], headerIndex: 0 }
+  return { headers: uniqueHeaders(rows[headerIndex]), headerIndex }
+}
+
+function workbookFromData(data: ArrayBuffer, fileName: string) {
+  const isCsv = fileName.toLowerCase().endsWith('.csv')
+  if (!isCsv) return XLSX.read(data, { type: 'array', cellDates: true })
+  const bytes = new Uint8Array(data)
+  const utf8 = new TextDecoder('utf-8').decode(bytes)
+  const csvText = utf8.includes('\uFFFD') ? new TextDecoder('gb18030').decode(bytes) : utf8
+  return XLSX.read(csvText.replace(/^\uFEFF/, ''), { type: 'string', cellDates: true })
+}
+
+function sheetBounds(sheet: XLSX.WorkSheet) {
+  return XLSX.utils.decode_range(sheet['!ref'] ?? 'A1:A1')
+}
+
+function headerSample(sheet: XLSX.WorkSheet) {
+  const bounds = sheetBounds(sheet)
+  return XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+    header: 1,
+    defval: '',
+    range: { s: { r: 0, c: 0 }, e: { r: Math.min(19, bounds.e.r), c: bounds.e.c } },
+  })
 }
 
 export async function inspectWorkbook(file: File, definition: FileSlotDefinition): Promise<StoredFile> {
   const data = await file.arrayBuffer()
-  const isCsv = file.name.toLowerCase().endsWith('.csv')
-  const workbook = XLSX.read(isCsv ? new TextDecoder('utf-8').decode(data) : data, { type: isCsv ? 'string' : 'array', cellDates: true })
+  const workbook = workbookFromData(data, file.name)
   const sheetName = workbook.SheetNames[0]
-  const matrix = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[sheetName], { header: 1, defval: '' })
-  const { headers, headerIndex } = pickHeaderRow(matrix)
-  const rows = matrix.slice(headerIndex + 1).filter((row) => row.some((value) => String(value ?? '').trim() !== ''))
-  const previewRows = rows.slice(0, 8).map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ''])))
+  if (!sheetName) throw new Error('文件中没有可读取的工作表')
+  const sheet = workbook.Sheets[sheetName]
+  const bounds = sheetBounds(sheet)
+  const { headers, headerIndex } = pickHeaderRow(headerSample(sheet))
+  if (!headers.length) throw new Error('第一个工作表没有可读取的标题行')
+  const previewMatrix = bounds.e.r > headerIndex ? XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+    header: 1,
+    defval: '',
+    range: { s: { r: headerIndex + 1, c: 0 }, e: { r: Math.min(headerIndex + 8, bounds.e.r), c: bounds.e.c } },
+  }) : []
+  const previewRows = previewMatrix.filter((row) => row.some((value) => String(value ?? '').trim() !== '')).map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ''])))
   const automaticMapping: Record<string, string> = {}
   return {
     slotId: definition.id,
     fileName: file.name,
     updatedAt: new Date().toISOString(),
-    rowCount: rows.length,
+    rowCount: Math.max(0, bounds.e.r - headerIndex),
     sheetNames: workbook.SheetNames,
     headers,
     previewRows,
@@ -70,12 +108,18 @@ export async function inspectWorkbook(file: File, definition: FileSlotDefinition
 }
 
 export function readMappedRows(file: StoredFile): Record<string, unknown>[] {
-  const isCsv = file.fileName.toLowerCase().endsWith('.csv')
-  const workbook = XLSX.read(isCsv ? new TextDecoder('utf-8').decode(file.data) : file.data, { type: isCsv ? 'string' : 'array', cellDates: true })
+  const workbook = workbookFromData(file.data, file.fileName)
   const sheet = workbook.Sheets[workbook.SheetNames[0]]
-  const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' })
-  const { headers, headerIndex } = pickHeaderRow(matrix)
-  return matrix.slice(headerIndex + 1)
+  if (!sheet) return []
+  const bounds = sheetBounds(sheet)
+  const { headers, headerIndex } = pickHeaderRow(headerSample(sheet))
+  if (!headers.length || bounds.e.r <= headerIndex) return []
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+    header: 1,
+    defval: '',
+    range: { s: { r: headerIndex + 1, c: 0 }, e: bounds.e },
+  })
+  return rows
     .filter((row) => row.some((value) => String(value ?? '').trim() !== ''))
     .map((row) => {
       const source = Object.fromEntries(headers.map((header, index) => [header, row[index] ?? '']))
@@ -119,15 +163,19 @@ export function parseForecast(file: StoredFile): ForecastRecord[] {
 }
 
 export function parseOutbound(file: StoredFile, channel: OutboundRecord['channel']): OutboundRecord[] {
-  return readMappedRows(file).map((row) => ({
-    productCode: String(row['商品编码'] ?? '').trim(),
-    series: String(row['销售系列'] ?? '').trim(),
-    date: normalizeDate(row['出库日期']),
-    postalCode: String(row['邮编'] ?? '').trim(),
-    quantity: normalizeNumber(row['数量']),
-    status: String(row['订单状态'] ?? '').trim(),
-    channel,
-  })).filter((row) => row.productCode && row.series && row.quantity > 0 && /完成|已发|发货|shipped/i.test(row.status))
+  return readMappedRows(file).map((row) => {
+    const productCode = String(row['商品编码'] ?? '').trim()
+    const status = String(row['订单状态'] ?? '').trim()
+    return {
+      productCode,
+      series: String(row['销售系列'] ?? '').trim() || productCode,
+      date: normalizeDate(row['出库日期']),
+      postalCode: String(row['邮编'] ?? '').trim(),
+      quantity: normalizeNumber(row['数量']),
+      status,
+      channel,
+    }
+  }).filter((row) => row.productCode && row.quantity > 0 && (!row.status || /完成|已发|发货|shipped|completed|fulfilled|released|order/i.test(row.status)))
 }
 
 export function parsePackaging(file: StoredFile): PackagingRecord[] {
@@ -145,14 +193,13 @@ export function parseWarehouses(file: StoredFile): WarehouseRecord[] {
   return readMappedRows(file).map((row) => {
     const state = String(row['州'] ?? '').trim().toUpperCase()
     const region = String(row['所属区域'] ?? '') as WarehouseRegion
-    const code = String(row['仓库编码'] ?? row['仓库名称'] ?? '').trim()
-    const name = String(row['仓库名称'] ?? row['仓库编码'] ?? '').trim()
+    const name = String(row['仓库'] ?? '').trim()
     return {
-      code,
+      code: name,
       name,
       region: ['美西', '美中', '美东'].includes(region) ? region : stateRegions[state] ?? '美中',
     }
-  }).filter((row) => row.code && row.name)
+  }).filter((row) => row.name)
 }
 
 export function postalRegion(postalCode: string): WarehouseRegion | undefined {
