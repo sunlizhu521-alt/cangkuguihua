@@ -198,11 +198,19 @@ describe('对照表映射字段', () => {
     expect(fileSlots.find((slot) => slot.id === 'warehouseMaterial')?.optionalFields).toEqual(['事业部', '仓库名称', '物料编码'])
   })
 
-  it('仓库维度使用组织、仓库和一级仓库分类，不再使用仓库编码', () => {
+  it('仓库维度使用组织、仓库、仓库名称和一级仓库分类', () => {
     const fields = fileSlots.find((slot) => slot.id === 'warehouse')?.optionalFields
-    expect(fields).toEqual(['使用组织', '仓库', '一级仓库分类', '州', '城市', '详细地址', '邮编', '所属区域'])
-    expect(fields).not.toContain('仓库编码')
-    const file = mappedFile('warehouse', [{ 仓库原值: '洛杉矶仓', 州原值: 'CA' }], { 仓库: '仓库原值', 州: '州原值' })
-    expect(parseWarehouses(file)).toEqual([{ code: '洛杉矶仓', name: '洛杉矶仓', region: '美西' }])
+    expect(fields).toEqual(['使用组织', '仓库', '仓库名称', '一级仓库分类'])
+    expect(fields).not.toEqual(expect.arrayContaining(['仓库编码', '州', '城市', '详细地址', '邮编', '所属区域']))
+    const file = mappedFile('warehouse', [{ 仓库原值: 'WH-CA-01', 仓库名称原值: '洛杉矶仓' }], { 仓库: '仓库原值', 仓库名称: '仓库名称原值' })
+    expect(parseWarehouses(file)).toEqual([{ code: 'WH-CA-01', name: '洛杉矶仓', region: '美中' }])
+    const nameOnlyFile = mappedFile('warehouse', [{ 仓库名称原值: '新泽西仓', 其他列: '测试' }], { 仓库名称: '仓库名称原值' })
+    expect(parseWarehouses(nameOnlyFile)).toEqual([{ code: '新泽西仓', name: '新泽西仓', region: '美中' }])
+  })
+
+  it('商品维度增加销售产品线、SKU和型号并移除品类', () => {
+    const fields = fileSlots.find((slot) => slot.id === 'product')?.optionalFields
+    expect(fields).toEqual(['商品编码', 'SKU', '商品名称', '型号', '销售系列', '销售产品线'])
+    expect(fields).not.toContain('品类')
   })
 })

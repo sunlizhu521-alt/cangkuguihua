@@ -161,7 +161,11 @@ export default function App() {
       const warehouses = parseWarehouses(warehouseFile).map((row) => ({ ...row, region: addressRegion.get(row.code) ?? row.region }))
       const warehouseCodeByName = new Map(warehouses.map((row) => [row.name, row.code]))
       const productFile = valid('product')
-      const seriesByProduct = new Map(productFile ? readMappedRows(productFile).map((row) => [String(row['商品编码'] ?? '').trim(), String(row['销售系列'] ?? '').trim()]) : [])
+      const seriesByProduct = new Map(productFile ? readMappedRows(productFile).flatMap((row) => {
+        const productCode = String(row['商品编码'] ?? '').trim() || String(row['SKU'] ?? '').trim()
+        const series = String(row['销售系列'] ?? '').trim() || String(row['销售产品线'] ?? '').trim()
+        return productCode && series ? [[productCode, series] as const] : []
+      }) : [])
       inventory = inventory.map((row) => ({ ...row, warehouseCode: warehouseCodeByName.get(row.warehouseName) ?? row.warehouseName, series: seriesByProduct.get(row.productCode) || row.productCode }))
       const activePackages = quotes.filter((quote) => quote.status === '已应用' && quote.activeRules.length)
       const packages = activePackages.length ? activePackages : [{ ...defaultQuoteSlots[0], logisticsCompany: '未配置物流商报价' }]

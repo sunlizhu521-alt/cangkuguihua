@@ -1,6 +1,5 @@
 import * as XLSX from 'xlsx'
 import { z } from 'zod'
-import { stateRegions } from './data'
 import type {
   FeeCategory,
   FeeRule,
@@ -249,15 +248,16 @@ export function parsePackaging(file: StoredFile): PackagingRecord[] {
 
 export function parseWarehouses(file: StoredFile): WarehouseRecord[] {
   return readMappedRows(file).map((row) => {
-    const state = String(row['州'] ?? '').trim().toUpperCase()
-    const region = String(row['所属区域'] ?? '') as WarehouseRegion
-    const name = String(row['仓库'] ?? '').trim()
+    const warehouse = String(row['仓库'] ?? '').trim()
+    const warehouseName = String(row['仓库名称'] ?? '').trim()
+    const code = warehouse || warehouseName
+    const name = warehouseName || warehouse
     return {
-      code: name,
+      code,
       name,
-      region: ['美西', '美中', '美东'].includes(region) ? region : stateRegions[state] ?? '美中',
+      region: '美中' as const,
     }
-  }).filter((row) => row.name)
+  }).filter((row) => row.code && row.name)
 }
 
 export function postalRegion(postalCode: string): WarehouseRegion | undefined {
