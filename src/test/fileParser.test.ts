@@ -162,16 +162,28 @@ describe('工作簿标题行解析', () => {
 })
 
 describe('出库数据解析', () => {
-  it('亚马逊英文订单状态可以解析，未提供销售系列时使用商品编码', () => {
-    const file = mappedFile('amazonOutbound', [{ sku: '商品一', date: '2026-08-01', quantity: 2, postal: '34986', type: 'Order' }], { 商品编码: 'sku', 出库日期: 'date', 数量: 'quantity', 邮编: 'postal', 订单状态: 'type' })
+  it('亚马逊仓配使用日期和SKU映射，内部销售系列使用SKU', () => {
+    const file = mappedFile('amazonOutbound', [{ sku: '商品一', date: '2026-08-01', quantity: 2, postal: '34986' }], { SKU: 'sku', 日期: 'date', 数量: 'quantity', 邮编: 'postal' })
     const rows = parseOutbound(file, '亚马逊仓配')
     expect(rows).toHaveLength(1)
+    expect(rows[0].productCode).toBe('商品一')
     expect(rows[0].series).toBe('商品一')
+    expect(rows[0].date).toBe('2026-08-01')
+    expect(rows[0].status).toBe('')
   })
 
-  it('商家自发货文件没有订单状态列时仍按已出库记录解析', () => {
-    const file = mappedFile('merchantOutbound', [{ sku: '商品二', date: '2026-08-02', quantity: 1, postal: '90001' }], { 商品编码: 'sku', 出库日期: 'date', 数量: 'quantity', 邮编: 'postal' })
+  it('商家自发货使用日期和SKU映射', () => {
+    const file = mappedFile('merchantOutbound', [{ sku: '商品二', date: '2026-08-02', quantity: 1, postal: '90001' }], { SKU: 'sku', 日期: 'date', 数量: 'quantity', 邮编: 'postal' })
     expect(parseOutbound(file, '商家自发货')).toHaveLength(1)
+  })
+
+  it('两类出库数据只提供新的中文映射字段且保持非必填', () => {
+    for (const id of ['amazonOutbound', 'merchantOutbound'] as const) {
+      const definition = fileSlots.find((slot) => slot.id === id)
+      expect(definition?.requiredFields).toEqual([])
+      expect(definition?.optionalFields).toEqual(['日期', 'SKU', '邮编', '数量', '仓库名称'])
+      expect(definition?.optionalFields).not.toEqual(expect.arrayContaining(['商品编码', '销售系列', '出库日期', '订单状态']))
+    }
   })
 
   it('Excel日期对象和日期时间文本不会因时区提前一天', () => {

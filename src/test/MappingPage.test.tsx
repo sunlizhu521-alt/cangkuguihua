@@ -62,4 +62,18 @@ describe('字段映射文件切换', () => {
     finishUpload?.()
     await waitFor(() => expect(input.value).toBe(''))
   })
+
+  it('字段调整后不统计或保存已经移除的旧映射', () => {
+    const amazon = {
+      ...storedFile('amazonOutbound', '亚马逊仓配.xlsx'),
+      headers: ['date/time', 'sku'],
+      mapping: { 商品编码: 'sku', 出库日期: 'date/time', 订单状态: 'type' },
+    }
+    const onSave = vi.fn()
+    render(<MappingPage files={[amazon]} selected={amazon} onSelect={vi.fn()} onUpload={vi.fn().mockResolvedValue(undefined)} onSave={onSave} />)
+
+    expect(screen.getByText('已选择 0 个字段')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '保存映射' }))
+    expect(onSave).toHaveBeenCalledWith(amazon, {})
+  })
 })

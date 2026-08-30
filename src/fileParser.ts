@@ -212,27 +212,24 @@ export function parseOutbound(file: StoredFile, channel: OutboundRecord['channel
     return sourceHeader ? sourceColumns.get(sourceHeader) : undefined
   }
   const columns = {
-    productCode: mappedColumn('商品编码'),
-    series: mappedColumn('销售系列'),
-    date: mappedColumn('出库日期'),
+    productCode: mappedColumn('SKU'),
+    date: mappedColumn('日期'),
     postalCode: mappedColumn('邮编'),
     quantity: mappedColumn('数量'),
-    status: mappedColumn('订单状态'),
   }
   const cellValue = (row: number, column: number | undefined) => column === undefined ? '' : sheet[XLSX.utils.encode_cell({ r: row, c: column })]?.v ?? ''
   const records: OutboundRecord[] = []
   for (let row = headerIndex + 1; row <= bounds.e.r; row += 1) {
     const productCode = String(cellValue(row, columns.productCode)).trim()
     const quantity = normalizeNumber(cellValue(row, columns.quantity))
-    const status = String(cellValue(row, columns.status)).trim()
-    if (!productCode || quantity <= 0 || (status && !/完成|已发|发货|shipped|completed|fulfilled|released|order/i.test(status))) continue
+    if (!productCode || quantity <= 0) continue
     records.push({
       productCode,
-      series: String(cellValue(row, columns.series)).trim() || productCode,
+      series: productCode,
       date: normalizeDate(cellValue(row, columns.date)),
       postalCode: String(cellValue(row, columns.postalCode)).trim(),
       quantity,
-      status,
+      status: '',
       channel,
     })
   }

@@ -38,7 +38,9 @@ export default function MappingPage({ files, selected, uploading, onSelect, onUp
 }
 
 function MappingEditor({ file, fields, onSave }: { file: StoredFile; fields: string[]; onSave: (file: StoredFile, mapping: Record<string, string>) => void }) {
-  const [mapping, setMapping] = useState<Record<string, string>>({ ...file.mapping })
+  const [mapping, setMapping] = useState<Record<string, string>>(() => Object.fromEntries(
+    fields.flatMap((field) => file.mapping[field] ? [[field, file.mapping[field]]] : []),
+  ))
   const selectedCount = Object.values(mapping).filter(Boolean).length
   return <div>
     <div className="mapping-title"><div><h2>{file.fileName}</h2><p>读取工作表：{file.sourceSheetName ?? file.sheetNames[0] ?? '未识别'}{file.sheetNames.length > 1 ? `（文件共 ${file.sheetNames.length} 个工作表）` : ''} · 已识别 {file.headers.length} 列 · 数据 {file.rowCount.toLocaleString('zh-CN')} 行</p></div><StatusTag tone={file.validation === '校验通过' ? 'success' : 'warning'}>{file.validation}</StatusTag></div>
