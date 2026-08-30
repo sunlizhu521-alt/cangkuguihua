@@ -103,12 +103,21 @@ export function parseInventory(file: StoredFile): InventoryRecord[] {
 }
 
 export function parseForecast(file: StoredFile): ForecastRecord[] {
-  return readMappedRows(file).map((row) => ({
-    productCode: String(row['商品编码'] ?? '').trim() || undefined,
-    series: String(row['销售系列'] ?? '').trim(),
-    quantity: normalizeNumber(row['预测数量']),
-    periodDays: Math.max(1, normalizeNumber(row['预测期间天数']) || 30),
-  })).filter((row) => row.series && row.quantity > 0)
+  return readMappedRows(file).flatMap((row) => {
+    const productCode = String(row['商品编码'] ?? '').trim() || undefined
+    const series = String(row['销售系列'] ?? '').trim()
+    if (!series) return []
+    const records: ForecastRecord[] = []
+    const totalQuantity = normalizeNumber(row['预测数量'])
+    const totalDays = normalizeNumber(row['预测期间天数'])
+    if (totalQuantity > 0 && totalDays > 0) records.push({ productCode, series, quantity: totalQuantity, periodDays: totalDays })
+    for (let period = 1; period <= 6; period += 1) {
+      const quantity = normalizeNumber(row[`未来第${period}期预测数量`])
+      const periodDays = normalizeNumber(row[`未来第${period}期天数`])
+      if (quantity > 0 && periodDays > 0) records.push({ productCode, series, quantity, periodDays })
+    }
+    return records
+  })
 }
 
 export function parseOutbound(file: StoredFile, channel: OutboundRecord['channel']): OutboundRecord[] {

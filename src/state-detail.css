@@ -1,0 +1,25 @@
+.state-detail {
+  display: grid;
+  gap: 6px;
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fbfcfd;
+  font-size: 12px;
+}
+
+.state-detail > strong {
+  color: #34435a;
+  font-size: 13px;
+}
+
+.state-detail span {
+  display: flex;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.state-detail span b {
+  min-width: 24px;
+  color: #176b67;
+}
