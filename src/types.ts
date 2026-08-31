@@ -40,7 +40,7 @@ export interface StoredFile {
 }
 
 export type WarehouseRegion = '美西' | '美中' | '美东'
-export type DemandRegion = '美西' | '美中' | '美东' | '英国' | '欧洲'
+export type DemandRegion = '美西' | '美中' | '美东' | '英国' | '加拿大' | '欧洲'
 export type SiteRegion = '美国' | '加拿大' | '英国' | '欧洲'
 
 export interface WarehouseAddress {
@@ -156,6 +156,7 @@ export interface OutboundRecord {
   quantity: number
   status: string
   channel: '亚马逊仓配' | '商家自发货'
+  country?: string
 }
 
 export interface PackagingRecord {

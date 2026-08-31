@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as XLSX from 'xlsx'
-import { demandRegion, inspectWorkbook, normalizeDate, parseInventory, parseOutbound, parseWarehouses } from '../fileParser'
+import { countryToSiteRegion, demandRegion, demandSiteRegion, inspectWorkbook, normalizeDate, parseInventory, parseOutbound, parseWarehouses } from '../fileParser'
 import { fileSlots } from '../data'
 import type { FileSlotId, StoredFile } from '../types'
 
@@ -73,6 +73,11 @@ describe('销售需求区域识别', () => {
     expect(demandRegion('  sw1a 1aa  ')).toBe('英国')
   })
 
+  it('识别加拿大邮编', () => {
+    expect(demandRegion('K1A 0B1')).toBe('加拿大')
+    expect(demandRegion('  k1a0b1  ')).toBe('加拿大')
+  })
+
   it('识别美国三个区域及带后四位的邮编', () => {
     expect(demandRegion('90001')).toBe('美西')
     expect(demandRegion('60601')).toBe('美中')
@@ -80,15 +85,33 @@ describe('销售需求区域识别', () => {
     expect(demandRegion('90001-1234')).toBe('美西')
   })
 
-  it('将其他正常邮编格式归入欧洲', () => {
-    expect(demandRegion('00-001')).toBe('欧洲')
-    expect(demandRegion('1234 AB')).toBe('欧洲')
+  it('无法仅靠邮编识别的格式返回未识别', () => {
+    expect(demandRegion('00-001')).toBeUndefined()
+    expect(demandRegion('1234 AB')).toBeUndefined()
+    expect(demandSiteRegion('00-001')).toBeUndefined()
+    expect(demandSiteRegion('1234 AB')).toBeUndefined()
   })
 
   it('排除空值和明显脏值', () => {
     for (const code of ['', '   ', 'N/A', 'NA', 'NULL', 'NONE', 'UNKNOWN', '未知', '无', '不详', '-', '–', '—']) {
       expect(demandRegion(code)).toBeUndefined()
     }
+  })
+
+  it('站点区域邮编识别加拿大、英国、美国并取美国前5位', () => {
+    expect(demandSiteRegion('K1A 0B1')).toBe('加拿大')
+    expect(demandSiteRegion('SW1A 1AA')).toBe('英国')
+    expect(demandSiteRegion('90001-1234')).toBe('美国')
+  })
+
+  it('国家和地区优先识别站点，并避免国家代码子串误判', () => {
+    expect(countryToSiteRegion('加拿大')).toBe('加拿大')
+    expect(countryToSiteRegion('CA')).toBe('加拿大')
+    expect(countryToSiteRegion('America')).toBe('美国')
+    expect(countryToSiteRegion('DE')).toBe('欧洲')
+    expect(countryToSiteRegion('法国')).toBe('欧洲')
+    expect(countryToSiteRegion('中国内地')).toBeUndefined()
+    expect(countryToSiteRegion('美国本土外小岛屿')).toBeUndefined()
   })
 })
 
@@ -195,7 +218,19 @@ describe('出库数据解析', () => {
     expect(rows[0].productCode).toBe('商品一')
     expect(rows[0].series).toBe('商品一')
     expect(rows[0].date).toBe('2026-08-01')
+    expect(rows[0].postalCode).toBe('34986')
     expect(rows[0].status).toBe('')
+  })
+
+  it('亚马逊仓配映射履约方式后只保留Amazon记录', () => {
+    const file = mappedFile('amazonOutbound', [
+      { sku: '商品一', date: '2026-08-01', quantity: 2, postal: '34986-1234', fulfillment: 'Amazon' },
+      { sku: '商品二', date: '2026-08-01', quantity: 3, postal: '90001', fulfillment: 'Merchant' },
+    ], { SKU: 'sku', 日期: 'date', 数量: 'quantity', 邮编: 'postal', 履约方式: 'fulfillment' })
+    const rows = parseOutbound(file, '亚马逊仓配')
+    expect(rows).toHaveLength(1)
+    expect(rows[0].productCode).toBe('商品一')
+    expect(rows[0].postalCode).toBe('34986')
   })
 
   it('商家自发货使用日期和SKU映射', () => {
@@ -203,13 +238,26 @@ describe('出库数据解析', () => {
     expect(parseOutbound(file, '商家自发货')).toHaveLength(1)
   })
 
-  it('两类出库数据只提供新的中文映射字段且保持非必填', () => {
-    for (const id of ['amazonOutbound', 'merchantOutbound'] as const) {
-      const definition = fileSlots.find((slot) => slot.id === id)
-      expect(definition?.requiredFields).toEqual([])
-      expect(definition?.optionalFields).toEqual(['日期', 'SKU', '邮编', '数量', '仓库名称'])
-      expect(definition?.optionalFields).not.toEqual(expect.arrayContaining(['商品编码', '销售系列', '出库日期', '订单状态']))
-    }
+  it('商家自发货保留国家地区、过滤排除地区并截取邮编前5位', () => {
+    const file = mappedFile('merchantOutbound', [
+      { sku: '商品一', date: '2026-08-02', quantity: 1, postal: '90001-1234', country: '美国' },
+      { sku: '商品二', date: '2026-08-02', quantity: 1, postal: '10001', country: '中国内地' },
+      { sku: '商品三', date: '2026-08-02', quantity: 1, postal: '20000', country: '美国本土外小岛屿' },
+    ], { SKU: 'sku', 日期: 'date', 数量: 'quantity', 邮编: 'postal', '国家/地区': 'country' })
+    const rows = parseOutbound(file, '商家自发货')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ productCode: '商品一', postalCode: '90001', country: '美国' })
+  })
+
+  it('两类出库数据提供各自新增映射字段且保持非必填', () => {
+    const amazon = fileSlots.find((slot) => slot.id === 'amazonOutbound')
+    const merchant = fileSlots.find((slot) => slot.id === 'merchantOutbound')
+    expect(amazon?.requiredFields).toEqual([])
+    expect(merchant?.requiredFields).toEqual([])
+    expect(amazon?.optionalFields).toEqual(['日期', 'SKU', '邮编', '数量', '仓库名称', '履约方式'])
+    expect(merchant?.optionalFields).toEqual(['日期', 'SKU', '邮编', '数量', '仓库名称', '国家/地区'])
+    expect(amazon?.optionalFields).not.toEqual(expect.arrayContaining(['商品编码', '销售系列', '出库日期', '订单状态']))
+    expect(merchant?.optionalFields).not.toEqual(expect.arrayContaining(['商品编码', '销售系列', '出库日期', '订单状态']))
   })
 
   it('Excel日期对象和日期时间文本不会因时区提前一天', () => {

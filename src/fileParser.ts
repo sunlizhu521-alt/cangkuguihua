@@ -217,6 +217,8 @@ export function parseOutbound(file: StoredFile, channel: OutboundRecord['channel
     date: mappedColumn('日期'),
     postalCode: mappedColumn('邮编'),
     quantity: mappedColumn('数量'),
+    fulfillment: mappedColumn('履约方式'),
+    country: mappedColumn('国家/地区'),
   }
   const cellValue = (row: number, column: number | undefined) => column === undefined ? '' : sheet[XLSX.utils.encode_cell({ r: row, c: column })]?.v ?? ''
   const records: OutboundRecord[] = []
@@ -224,14 +226,25 @@ export function parseOutbound(file: StoredFile, channel: OutboundRecord['channel
     const productCode = String(cellValue(row, columns.productCode)).trim()
     const quantity = normalizeNumber(cellValue(row, columns.quantity))
     if (!productCode || quantity <= 0) continue
+    // 亚马逊仓配只保留由 Amazon 履约的记录；未映射履约方式时不做过滤。
+    if (channel === '亚马逊仓配' && columns.fulfillment !== undefined) {
+      const fulfillment = String(cellValue(row, columns.fulfillment)).trim().toLowerCase()
+      if (fulfillment !== 'amazon') continue
+    }
+    // 中国内地及美国本土外小岛屿不进入销售区域统计。
+    const country = String(cellValue(row, columns.country)).trim()
+    if (/中国|内地|本土外|小岛屿/i.test(country)) continue
+    // 美国邮编只保留前5位，忽略连字符及其后内容。
+    const postalCode = String(cellValue(row, columns.postalCode)).trim().split('-')[0].trim()
     records.push({
       productCode,
       series: productCode,
       date: normalizeDate(cellValue(row, columns.date)),
-      postalCode: String(cellValue(row, columns.postalCode)).trim(),
+      postalCode,
       quantity,
       status: '',
       channel,
+      country,
     })
   }
   return records
@@ -277,30 +290,41 @@ export function postalRegion(postalCode: string): WarehouseRegion | undefined {
 export function demandRegion(postalCode: string): DemandRegion | undefined {
   const code = postalCode.trim()
   if (!code || /^(?:N\/?A|NULL|NONE|UNKNOWN|未知|无|不详|[-–—]+)$/i.test(code)) return undefined
-  // 英国邮编：字母开头，如 SW1A 1AA、M1 1AE
+  // 加拿大邮编：A1A 1A1
+  if (/^[A-Z]\d[A-Z]\s?\d[A-Z]\d$/i.test(code)) return '加拿大'
+  // 英国邮编：字母开头
   if (/^[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$/i.test(code)) return '英国'
-  // 美国邮编：纯5位数字（或 ZIP+4）
-  if (/^\d{5}(-\d{4})?$/.test(code)) {
-    const first = code[0]
+  // 美国邮编：取前5位（连字符及其后内容忽略）
+  const five = code.split('-')[0].trim()
+  if (/^\d{5}$/.test(five)) {
+    const first = five[0]
     if (['8', '9'].includes(first)) return '美西'
     if (['4', '5', '6', '7'].includes(first)) return '美中'
     return '美东'
   }
-  // 其他正常非空格式（波兰 00-001、荷兰 1234 AB 等）归欧洲
-  return '欧洲'
+  return undefined
 }
 
 export function demandSiteRegion(postalCode: string): SiteRegion | undefined {
   const code = postalCode.trim()
   if (!code || /^(?:N\/?A|NULL|NONE|UNKNOWN|未知|无|不详|[-–—]+)$/i.test(code)) return undefined
-  // 加拿大邮编：A1A 1A1
   if (/^[A-Z]\d[A-Z]\s?\d[A-Z]\d$/i.test(code)) return '加拿大'
-  // 英国邮编：字母开头
   if (/^[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$/i.test(code)) return '英国'
-  // 美国邮编：纯5位数字
-  if (/^\d{5}(-\d{4})?$/.test(code)) return '美国'
-  // 其他正常非空格式归欧洲
-  return '欧洲'
+  const five = code.split('-')[0].trim()
+  if (/^\d{5}$/.test(five)) return '美国'
+  return undefined
+}
+
+const europeanCountryPattern = /德国|法国|意大利|西班牙|荷兰|比利时|瑞典|丹麦|葡萄牙|奥地利|希腊|爱尔兰|卢森堡|捷克|马耳他|拉脱维亚|芬兰|波兰|爱沙尼亚|克罗地亚|斯洛伐克|匈牙利|罗马尼亚|斯洛文尼亚|立陶宛|保加利亚|摩纳哥|欧洲|^(?:DE|FR|IT|ES|NL|BE|SE|DK|PT|AT|GR|IE|LU|CZ|MT|LV|FI|PL|EE|HR|SK|HU|RO|SI|LT|BG|MC|EU)$/i
+
+export function countryToSiteRegion(country: string): SiteRegion | undefined {
+  const c = country.trim()
+  if (!c || /中国|内地|本土外|小岛屿/i.test(c)) return undefined
+  if (/加拿大|Canada/i.test(c) || c === '加' || /^CA$/i.test(c)) return '加拿大'
+  if (/英国|United Kingdom/i.test(c) || c === '英' || /^(?:UK|GB)$/i.test(c)) return '英国'
+  if (/美国|United States|America/i.test(c) || c === '美' || /^(?:US|USA)$/i.test(c)) return '美国'
+  if (europeanCountryPattern.test(c)) return '欧洲'
+  return undefined
 }
 
 export function siteRegion(site: string): SiteRegion | undefined {
