@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as XLSX from 'xlsx'
-import { inspectWorkbook, normalizeDate, parseInventory, parseOutbound, parseWarehouses } from '../fileParser'
+import { demandRegion, inspectWorkbook, normalizeDate, parseInventory, parseOutbound, parseWarehouses } from '../fileParser'
 import { fileSlots } from '../data'
 import type { FileSlotId, StoredFile } from '../types'
 
@@ -63,6 +63,32 @@ describe('库存字段解析', () => {
   it('已选择在库量或在途量后不再使用总数量补空值', () => {
     const rows = parseInventory(inventoryFile([{ 仓库: '洛杉矶仓', 货号: '商品一', 总数: 20, 在库: '', 在途: '' }]))
     expect(rows).toHaveLength(0)
+  })
+})
+
+describe('销售需求区域识别', () => {
+  it('识别英国邮编并容忍小写与前后空格', () => {
+    expect(demandRegion('SW1A 1AA')).toBe('英国')
+    expect(demandRegion('M1 1AE')).toBe('英国')
+    expect(demandRegion('  sw1a 1aa  ')).toBe('英国')
+  })
+
+  it('识别美国三个区域及带后四位的邮编', () => {
+    expect(demandRegion('90001')).toBe('美西')
+    expect(demandRegion('60601')).toBe('美中')
+    expect(demandRegion('10001')).toBe('美东')
+    expect(demandRegion('90001-1234')).toBe('美西')
+  })
+
+  it('将其他正常邮编格式归入欧洲', () => {
+    expect(demandRegion('00-001')).toBe('欧洲')
+    expect(demandRegion('1234 AB')).toBe('欧洲')
+  })
+
+  it('排除空值和明显脏值', () => {
+    for (const code of ['', '   ', 'N/A', 'NA', 'NULL', 'NONE', 'UNKNOWN', '未知', '无', '不详', '-', '–', '—']) {
+      expect(demandRegion(code)).toBeUndefined()
+    }
   })
 })
 

@@ -7,11 +7,11 @@ import ResultsPage, { type HistoricalSummary } from './pages/ResultsPage'
 import SettingsPage from './pages/SettingsPage'
 import { defaultAddresses, defaultAnalysisSettings, defaultQuoteSlots, stateRegions } from './data'
 import { db, getSetting, saveFile, saveQuote, settingKeys, setSetting, updateFileMapping } from './storage'
-import { inspectWorkbook, localQuoteDraft, parseForecast, parseInventory, parseOutbound, parsePackaging, parseWarehouses, postalRegion, readMappedRows } from './fileParser'
+import { demandRegion, inspectWorkbook, localQuoteDraft, parseForecast, parseInventory, parseOutbound, parsePackaging, parseWarehouses, postalRegion, readMappedRows } from './fileParser'
 import { optimizeTransfers } from './analysis'
 import { parseQuoteWithAi, testAiConnection } from './ai'
 import { exportAnalysisWorkbook } from './exportExcel'
-import type { AiSettings, AnalysisResult, AnalysisSettings, FileSlotDefinition, ManualTransferQuote, PageId, QuoteVersion, StoredFile, WarehouseAddress, WarehouseRegion } from './types'
+import type { AiSettings, AnalysisResult, AnalysisSettings, DemandRegion, FileSlotDefinition, ManualTransferQuote, PageId, QuoteVersion, StoredFile, WarehouseAddress } from './types'
 import './styles.css'
 
 const defaultAiSettings: AiSettings = {
@@ -196,17 +196,17 @@ export default function App() {
 function buildHistory(files: StoredFile[]): HistoricalSummary {
   const amazonFile = files.find((file) => file.slotId === 'amazonOutbound' && file.validation === '校验通过')
   const merchantFile = files.find((file) => file.slotId === 'merchantOutbound' && file.validation === '校验通过')
-  if (!amazonFile || !merchantFile) return { channelAmazonShare: 0, channelMerchantShare: 0, postcodeCoverage: 0, regionDemand: { 美西: 0, 美中: 0, 美东: 0 }, messages: ['亚马逊仓配与商家自发货历史出库数据未同时通过校验，不生成正式地区建议'] }
+  if (!amazonFile || !merchantFile) return { channelAmazonShare: 0, channelMerchantShare: 0, postcodeCoverage: 0, regionDemand: { 美西: 0, 美中: 0, 美东: 0, 英国: 0, 欧洲: 0 }, messages: ['亚马逊仓配与商家自发货历史出库数据未同时通过校验，不生成正式地区建议'] }
   const amazon = parseOutbound(amazonFile, '亚马逊仓配'), merchant = parseOutbound(merchantFile, '商家自发货')
   const datesA = amazon.map((row) => row.date).filter(Boolean).sort(), datesM = merchant.map((row) => row.date).filter(Boolean).sort()
   const start = [datesA[0], datesM[0]].filter(Boolean).sort().at(-1), end = [datesA.at(-1), datesM.at(-1)].filter(Boolean).sort()[0]
-  if (!start || !end || start > end) return { channelAmazonShare: 0, channelMerchantShare: 0, postcodeCoverage: 0, regionDemand: { 美西: 0, 美中: 0, 美东: 0 }, messages: ['两类历史出库没有共同覆盖日期区间，不生成正式地区建议'] }
+  if (!start || !end || start > end) return { channelAmazonShare: 0, channelMerchantShare: 0, postcodeCoverage: 0, regionDemand: { 美西: 0, 美中: 0, 美东: 0, 英国: 0, 欧洲: 0 }, messages: ['两类历史出库没有共同覆盖日期区间，不生成正式地区建议'] }
   const a = amazon.filter((row) => row.date >= start && row.date <= end), m = merchant.filter((row) => row.date >= start && row.date <= end), all = [...a, ...m]
   const amountA = a.reduce((sum, row) => sum + row.quantity, 0), amountM = m.reduce((sum, row) => sum + row.quantity, 0), total = amountA + amountM
-  const valid = all.filter((row) => postalRegion(row.postalCode)), validAmount = valid.reduce((sum, row) => sum + row.quantity, 0)
-  const regions: Record<WarehouseRegion, number> = { 美西: 0, 美中: 0, 美东: 0 }
-  valid.forEach((row) => { regions[postalRegion(row.postalCode)!] += row.quantity })
-  ;(Object.keys(regions) as WarehouseRegion[]).forEach((region) => { regions[region] = validAmount ? regions[region] / validAmount : 0 })
+  const valid = all.filter((row) => demandRegion(row.postalCode)), validAmount = valid.reduce((sum, row) => sum + row.quantity, 0)
+  const regions: Record<DemandRegion, number> = { 美西: 0, 美中: 0, 美东: 0, 英国: 0, 欧洲: 0 }
+  valid.forEach((row) => { const region = demandRegion(row.postalCode); if (region) regions[region] += row.quantity })
+  ;(Object.keys(regions) as DemandRegion[]).forEach((region) => { regions[region] = validAmount ? regions[region] / validAmount : 0 })
   const messages = []
   if (all.length < 30) messages.push('共同日期区间内历史记录少于30条，受影响部分仅作提示')
   if (total && validAmount / total < .8) messages.push('有效邮编覆盖率低于80%，地区热力需谨慎使用')
@@ -214,5 +214,5 @@ function buildHistory(files: StoredFile[]): HistoricalSummary {
 }
 
 function emptyHistoricalSummary(): HistoricalSummary {
-  return { channelAmazonShare: 0, channelMerchantShare: 0, postcodeCoverage: 0, regionDemand: { 美西: 0, 美中: 0, 美东: 0 }, messages: ['请完成历史出库数据映射并运行分析'] }
+  return { channelAmazonShare: 0, channelMerchantShare: 0, postcodeCoverage: 0, regionDemand: { 美西: 0, 美中: 0, 美东: 0, 英国: 0, 欧洲: 0 }, messages: ['请完成历史出库数据映射并运行分析'] }
 }

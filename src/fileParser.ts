@@ -5,6 +5,7 @@ import type {
   FeeRule,
   FileSlotDefinition,
   ForecastRecord,
+  DemandRegion,
   InventoryRecord,
   OutboundRecord,
   PackagingRecord,
@@ -267,6 +268,22 @@ export function postalRegion(postalCode: string): WarehouseRegion | undefined {
   if (['4', '5', '6', '7'].includes(first)) return '美中'
   if (['0', '1', '2', '3'].includes(first)) return '美东'
   return undefined
+}
+
+export function demandRegion(postalCode: string): DemandRegion | undefined {
+  const code = postalCode.trim()
+  if (!code || /^(?:N\/?A|NULL|NONE|UNKNOWN|未知|无|不详|[-–—]+)$/i.test(code)) return undefined
+  // 英国邮编：字母开头，如 SW1A 1AA、M1 1AE
+  if (/^[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$/i.test(code)) return '英国'
+  // 美国邮编：纯5位数字（或 ZIP+4）
+  if (/^\d{5}(-\d{4})?$/.test(code)) {
+    const first = code[0]
+    if (['8', '9'].includes(first)) return '美西'
+    if (['4', '5', '6', '7'].includes(first)) return '美中'
+    return '美东'
+  }
+  // 其他正常非空格式（波兰 00-001、荷兰 1234 AB 等）归欧洲
+  return '欧洲'
 }
 
 const quoteRuleSchema = z.object({

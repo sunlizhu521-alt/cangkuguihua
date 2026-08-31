@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react'
 import { AlertTriangle, Calculator, Download, MapPinned, PackageSearch, Plus, Route } from 'lucide-react'
-import type { AnalysisResult, ManualTransferQuote, WarehouseAddress, WarehouseRegion } from '../types'
+import type { AnalysisResult, DemandRegion, ManualTransferQuote, WarehouseAddress, WarehouseRegion } from '../types'
 import { EmptyState, Money, PageHeader, StatusTag } from '../components/Common'
 
 export interface HistoricalSummary {
   channelAmazonShare: number
   channelMerchantShare: number
   postcodeCoverage: number
-  regionDemand: Record<WarehouseRegion, number>
+  regionDemand: Record<DemandRegion, number>
   commonDateRange?: string
   messages: string[]
 }

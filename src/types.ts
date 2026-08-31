@@ -40,6 +40,7 @@ export interface StoredFile {
 }
 
 export type WarehouseRegion = '美西' | '美中' | '美东'
+export type DemandRegion = '美西' | '美中' | '美东' | '英国' | '欧洲'
 
 export interface WarehouseAddress {
   id?: number
