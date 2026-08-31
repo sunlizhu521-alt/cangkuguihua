@@ -9,6 +9,7 @@ import type {
   InventoryRecord,
   OutboundRecord,
   PackagingRecord,
+  SiteRegion,
   StoredFile,
   WarehouseRegion,
   WarehouseRecord,
@@ -251,12 +252,15 @@ export function parseWarehouses(file: StoredFile): WarehouseRecord[] {
   return readMappedRows(file).map((row) => {
     const warehouse = String(row['仓库'] ?? '').trim()
     const warehouseName = String(row['仓库名称'] ?? '').trim()
+    const site = String(row['站点'] ?? '').trim()
     const code = warehouse || warehouseName
     const name = warehouseName || warehouse
     return {
       code,
       name,
       region: '美中' as const,
+      site,
+      siteRegion: siteRegion(site),
     }
   }).filter((row) => row.code && row.name)
 }
@@ -284,6 +288,16 @@ export function demandRegion(postalCode: string): DemandRegion | undefined {
   }
   // 其他正常非空格式（波兰 00-001、荷兰 1234 AB 等）归欧洲
   return '欧洲'
+}
+
+export function siteRegion(site: string): SiteRegion | undefined {
+  const value = site.trim()
+  if (!value) return undefined
+  if (/美国|美|US|USA/i.test(value)) return '美国'
+  if (/加拿大|加|Canada|CA/i.test(value)) return '加拿大'
+  if (/英国|英|UK|GB/i.test(value)) return '英国'
+  if (/德国|法国|意大利|西班牙|波兰|荷兰|欧洲|DE|FR|IT|ES|PL|NL|EU/i.test(value)) return '欧洲'
+  return undefined
 }
 
 const quoteRuleSchema = z.object({

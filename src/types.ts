@@ -41,6 +41,7 @@ export interface StoredFile {
 
 export type WarehouseRegion = '美西' | '美中' | '美东'
 export type DemandRegion = '美西' | '美中' | '美东' | '英国' | '欧洲'
+export type SiteRegion = '美国' | '加拿大' | '英国' | '欧洲'
 
 export interface WarehouseAddress {
   id?: number
@@ -128,6 +129,7 @@ export interface AnalysisSettings {
 export interface InventoryRecord {
   warehouseCode: string
   warehouseName: string
+  siteRegion?: SiteRegion
   productCode: string
   series: string
   quantity: number
@@ -168,6 +170,8 @@ export interface WarehouseRecord {
   code: string
   name: string
   region: WarehouseRegion
+  site?: string
+  siteRegion?: SiteRegion
 }
 
 export interface ManualTransferQuote {
@@ -221,4 +225,10 @@ export interface AnalysisResult {
   coverageDays: number
   riskMessages: string[]
   dataQualityMessages: string[]
+}
+
+export interface SiteInventorySummary {
+  region: SiteRegion
+  onHand: number
+  inTransit: number
 }
