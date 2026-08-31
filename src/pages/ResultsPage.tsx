@@ -110,10 +110,18 @@ function EuropeDemandMap({ history }: { history: HistoricalSummary }) {
 
 function SiteInventorySection({ siteInventory }: { siteInventory: SiteInventorySummary[] }) {
   if (!siteInventory.length) return null
+  const tone = (status: SiteInventorySummary['status']) => status === '安全' ? 'success' as const : status === '预警' ? 'warning' as const : 'danger' as const
   return <section className="section">
-    <div className="section-heading"><div><h2><PackageSearch size={20}/>区域库存分布</h2><p>按仓库维度「站点」归类，加拿大单独统计并与美国相邻展示。在库/在途均为成品件数。</p></div></div>
+    <div className="section-heading"><div><h2><PackageSearch size={20}/>区域库存分布</h2><p>按仓库维度「站点」归类，加拿大单独统计并与美国相邻展示。安全库存=日均销量×安全库存天数，用在库+在途总量判断。</p></div></div>
     <div className="metric-grid">
-      {siteInventory.map((row) => <div className="metric-card" key={row.region}><span>{row.region}</span><strong>{row.onHand.toLocaleString('zh-CN')}</strong><small>在库量（件）</small><strong>{row.inTransit.toLocaleString('zh-CN')}</strong><small>在途量（件）</small></div>)}
+      {siteInventory.map((row) => <div className="metric-card" key={row.region}>
+        <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>{row.region}<StatusTag tone={tone(row.status)}>{row.status}</StatusTag></span>
+        <strong>{row.onHand.toLocaleString('zh-CN')}</strong>
+        <small>在库量（件）</small>
+        <strong>{row.inTransit.toLocaleString('zh-CN')}</strong>
+        <small>在途量（件）</small>
+        <small>可支撑 {Number.isFinite(row.coverageDays) ? row.coverageDays.toFixed(1) : '∞'} 天 · 安全库存 {Math.round(row.safetyStock).toLocaleString('zh-CN')} 件</small>
+      </div>)}
     </div>
   </section>
 }
