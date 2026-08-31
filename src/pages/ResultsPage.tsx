@@ -27,6 +27,7 @@ export default function ResultsPage({ results, addresses, manualQuotes, history,
     <PageHeader title="分析结果" description="比较不调拨与不同调拨数量的完整费用，自动选择有效成本更低的中转资源" actions={<><button className="button secondary" disabled={!results.length} onClick={onExport}><Download size={17}/>导出Excel</button><button className="button primary" disabled={running} onClick={onRun}><Calculator size={17}/>{running ? '正在测算…' : '重新测算'}</button></>} />
     <SummaryCards results={results} history={history}/>
     <WarehouseMap addresses={addresses} results={results} history={history}/>
+    <EuropeDemandMap history={history}/>
     <PreAnalysis results={results}/>
     <ManualQuotePanel quotes={manualQuotes} results={results} onAdd={onAddManualQuote} onDelete={onDeleteManualQuote}/>
     <ResultTable results={results}/>
@@ -72,4 +73,34 @@ function ManualQuotePanel({ quotes, results, onAdd, onDelete }: { quotes: Manual
 
 function ResultTable({ results }: { results: AnalysisResult[] }) {
   return <section className="section"><div className="section-heading"><div><h2>完整费用比较</h2><p>金额统一换算成人民币展示。</p></div></div>{!results.length ? <EmptyState title="尚未生成分析结果" description="先完成文件映射、仓库区域确认和报价应用，然后点击重新测算。"/> : <div className="table-frame"><table className="results-table"><thead><tr><th>判断结果</th><th>销售系列</th><th>原仓 → 目的仓</th><th>区域</th><th>调拨件数 / 比例</th><th>采用中转资源</th><th>不调拨费用</th><th>调拨费用</th><th>节省金额 / 比例</th><th>到仓日期</th><th>期末库存</th><th>风险</th></tr></thead><tbody>{results.map((row) => <tr key={row.id}><td><StatusTag tone={row.decision === '建议调拨' ? 'success' : row.decision === '待补数据' ? 'warning' : 'neutral'}>{row.decision}</StatusTag></td><td className="strong">{row.series}</td><td>{row.originWarehouse}{row.destinationWarehouse ? ` → ${row.destinationWarehouse}` : ''}</td><td>{row.region}</td><td>{row.transferQuantity.toLocaleString('zh-CN')} / {(row.transferRatio * 100).toFixed(1)}%</td><td>{row.transferResource}</td><td><Money value={row.noTransferCost.total}/></td><td><Money value={row.transferCost.total}/><small className="cell-detail">仓储 {Math.round(row.transferCost.storage)} · 配送 {Math.round(row.transferCost.delivery)} · 中转 {Math.round(row.transferCost.transfer + row.transferCost.outbound + row.transferCost.inbound)}</small></td><td className={row.savings > 0 ? 'positive' : 'negative'}><Money value={row.savings}/> / {(row.savingsRate * 100).toFixed(1)}%</td><td>{row.expectedArrivalDate ?? '—'}</td><td>{Math.round(row.endingQuantity).toLocaleString('zh-CN')}</td><td>{[...row.riskMessages, ...row.dataQualityMessages].join('；') || '无'}</td></tr>)}</tbody></table></div>}</section>
+}
+
+function EuropeDemandMap({ history }: { history: HistoricalSummary }) {
+  const ukDemand = history.regionDemand['英国'] ?? 0
+  const euDemand = history.regionDemand['欧洲'] ?? 0
+  return <section className="section map-section">
+    <div className="section-heading">
+      <div><h2><MapPinned size={20}/>欧洲需求分布</h2><p>英国单独统计，其余欧洲国家归入「欧洲」。热力表示历史订单占比，不等同于库存数量。</p></div>
+    </div>
+    <div className="map-layout">
+      <div className="us-map">
+        <svg viewBox="0 0 600 340" role="img" aria-label="欧洲英国与欧洲大陆需求分布图">
+          <path d="M92 40 L116 34 L138 46 L146 74 L134 108 L110 128 L86 118 L72 92 L78 58 Z" fill="#d8f4ef" stroke="#66918e" strokeWidth="2"/>
+          <path d="M246 44 L300 40 L334 52 L356 74 L344 98 L366 116 L352 144 L374 168 L358 196 L370 220 L344 244 L320 264 L292 272 L268 262 L252 236 L240 206 L234 170 L228 132 L234 94 L240 66 Z" fill="#b6dedb" stroke="#66918e" strokeWidth="2"/>
+          <circle cx="110" cy="84" r={20 + ukDemand * 28} fill="#13a89e" fillOpacity={0.18 + ukDemand * 0.35}/>
+          <circle cx="110" cy="84" r="7" fill="#087e78" stroke="white" strokeWidth="3"/>
+          <text x="110" y="49" textAnchor="middle" className="map-region">英国</text>
+          <text x="110" y="126" textAnchor="middle" className="map-demand">历史需求 {(ukDemand * 100).toFixed(1)}%</text>
+          <circle cx="330" cy="176" r={20 + euDemand * 28} fill="#13a89e" fillOpacity={0.18 + euDemand * 0.35}/>
+          <circle cx="330" cy="176" r="7" fill="#087e78" stroke="white" strokeWidth="3"/>
+          <text x="330" y="141" textAnchor="middle" className="map-region">欧洲</text>
+          <text x="330" y="218" textAnchor="middle" className="map-demand">历史需求 {(euDemand * 100).toFixed(1)}%</text>
+        </svg>
+      </div>
+      <div className="map-side">
+        <div className="region-stat"><span className="region-dot"/><div><strong>英国</strong><small>历史需求占比</small></div><div className="region-values"><b>{(ukDemand * 100).toFixed(1)}%</b><small>历史订单</small></div></div>
+        <div className="region-stat"><span className="region-dot"/><div><strong>欧洲</strong><small>历史需求占比</small></div><div className="region-values"><b>{(euDemand * 100).toFixed(1)}%</b><small>历史订单</small></div></div>
+      </div>
+    </div>
+  </section>
 }
