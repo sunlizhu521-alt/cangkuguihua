@@ -124,6 +124,7 @@ export interface AnalysisSettings {
   usdToCny: number
   minimumSavingsCny: number
   minimumSavingsRate: number
+  safetyStockDays: number
 }
 
 export interface InventoryRecord {
@@ -231,4 +232,8 @@ export interface SiteInventorySummary {
   region: SiteRegion
   onHand: number
   inTransit: number
+  dailyDemand: number
+  safetyStock: number
+  coverageDays: number
+  status: '安全' | '预警' | '缺货'
 }

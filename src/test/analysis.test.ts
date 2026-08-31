@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { optimizeTransfers } from '../analysis'
+import { demandSiteRegion } from '../fileParser'
 import type { OptimizationInput } from '../analysis'
 
 function input(overrides: Partial<OptimizationInput> = {}): OptimizationInput {
@@ -18,7 +19,7 @@ function input(overrides: Partial<OptimizationInput> = {}): OptimizationInput {
       { id: '三', category: '中转运输费', name: '运输', routeFrom: 'CA1', routeTo: 'CA2', billingUnit: '每件', rateUsd: 0.01, transitDays: 3, conditions: '', confidence: '高', evidence: { sheetName: '报价', cellRange: 'A3', rawText: '运输' }, validationIssues: [] },
     ],
     manualQuotes: [],
-    settings: { baseDate: '2026-09-01', analysisDays: 45, usdToCny: 7, minimumSavingsCny: 1, minimumSavingsRate: 1 },
+    settings: { baseDate: '2026-09-01', analysisDays: 45, usdToCny: 7, minimumSavingsCny: 1, minimumSavingsRate: 1, safetyStockDays: 45 },
     ...overrides,
   }
 }
@@ -62,7 +63,7 @@ describe('调拨优化', () => {
   })
 
   it('节省金额和节省比例必须同时达到标准', () => {
-    const value = input({ settings: { baseDate: '2026-09-01', analysisDays: 45, usdToCny: 7, minimumSavingsCny: 999999, minimumSavingsRate: 99 } })
+    const value = input({ settings: { baseDate: '2026-09-01', analysisDays: 45, usdToCny: 7, minimumSavingsCny: 999999, minimumSavingsRate: 99, safetyStockDays: 45 } })
     const row = optimizeTransfers(value)[0]
     expect(row.decision).toBe('不调拨')
     expect(row.transferQuantity).toBe(0)
@@ -78,5 +79,18 @@ describe('调拨优化', () => {
     const value = input({ manualQuotes: [{ carrier: '低价承运商', originWarehouse: 'CA1', destinationWarehouse: 'CA2', quantity: 100, volumeCubicMeters: 6, priceMode: '每立方米单价', price: 0.01, currency: '人民币', transitDays: 2, scope: '全包价', quoteDate: '2026-09-01', expiresAt: '2026-12-01', notes: '' }] })
     const row = optimizeTransfers(value)[0]
     expect(row.transferResource).toContain('低价承运商')
+  })
+})
+
+describe('站点需求区域识别', () => {
+  it('识别加拿大、英国、美国、欧洲并排除明显脏值', () => {
+    expect(demandSiteRegion('K1A 0B1')).toBe('加拿大')
+    expect(demandSiteRegion('SW1A 1AA')).toBe('英国')
+    expect(demandSiteRegion('90001-1234')).toBe('美国')
+    expect(demandSiteRegion('00-001')).toBe('欧洲')
+    expect(demandSiteRegion('N/A')).toBeUndefined()
+    expect(demandSiteRegion('未知')).toBeUndefined()
+    expect(demandSiteRegion('—')).toBeUndefined()
+    expect(demandSiteRegion('   ')).toBeUndefined()
   })
 })

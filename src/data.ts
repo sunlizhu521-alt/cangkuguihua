@@ -20,6 +20,7 @@ export const defaultAnalysisSettings: AnalysisSettings = {
   usdToCny: 7.2,
   minimumSavingsCny: 0,
   minimumSavingsRate: 0,
+  safetyStockDays: 45,
 }
 
 export const defaultAddresses: WarehouseAddress[] = [

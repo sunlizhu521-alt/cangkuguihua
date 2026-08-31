@@ -290,6 +290,19 @@ export function demandRegion(postalCode: string): DemandRegion | undefined {
   return '欧洲'
 }
 
+export function demandSiteRegion(postalCode: string): SiteRegion | undefined {
+  const code = postalCode.trim()
+  if (!code || /^(?:N\/?A|NULL|NONE|UNKNOWN|未知|无|不详|[-–—]+)$/i.test(code)) return undefined
+  // 加拿大邮编：A1A 1A1
+  if (/^[A-Z]\d[A-Z]\s?\d[A-Z]\d$/i.test(code)) return '加拿大'
+  // 英国邮编：字母开头
+  if (/^[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$/i.test(code)) return '英国'
+  // 美国邮编：纯5位数字
+  if (/^\d{5}(-\d{4})?$/.test(code)) return '美国'
+  // 其他正常非空格式归欧洲
+  return '欧洲'
+}
+
 export function siteRegion(site: string): SiteRegion | undefined {
   const value = site.trim()
   if (!value) return undefined
