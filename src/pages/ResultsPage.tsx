@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { AlertTriangle, Calculator, Download, MapPinned, PackageSearch, Plus, Route } from 'lucide-react'
-import type { AnalysisResult, DemandRegion, ManualTransferQuote, WarehouseAddress, WarehouseRegion } from '../types'
+import type { AnalysisResult, DemandRegion, ManualTransferQuote, SiteInventorySummary, WarehouseAddress, WarehouseRegion } from '../types'
 import { EmptyState, Money, PageHeader, StatusTag } from '../components/Common'
 
 export interface HistoricalSummary {
@@ -12,11 +12,12 @@ export interface HistoricalSummary {
   messages: string[]
 }
 
-export default function ResultsPage({ results, addresses, manualQuotes, history, running, onRun, onAddManualQuote, onDeleteManualQuote, onExport }: {
+export default function ResultsPage({ results, addresses, manualQuotes, history, siteInventory, running, onRun, onAddManualQuote, onDeleteManualQuote, onExport }: {
   results: AnalysisResult[]
   addresses: WarehouseAddress[]
   manualQuotes: ManualTransferQuote[]
   history: HistoricalSummary
+  siteInventory: SiteInventorySummary[]
   running: boolean
   onRun: () => void
   onAddManualQuote: (quote: ManualTransferQuote) => void
@@ -28,6 +29,7 @@ export default function ResultsPage({ results, addresses, manualQuotes, history,
     <SummaryCards results={results} history={history}/>
     <WarehouseMap addresses={addresses} results={results} history={history}/>
     <EuropeDemandMap history={history}/>
+    <SiteInventorySection siteInventory={siteInventory}/>
     <PreAnalysis results={results}/>
     <ManualQuotePanel quotes={manualQuotes} results={results} onAdd={onAddManualQuote} onDelete={onDeleteManualQuote}/>
     <ResultTable results={results}/>
@@ -101,6 +103,16 @@ function EuropeDemandMap({ history }: { history: HistoricalSummary }) {
         <div className="region-stat"><span className="region-dot"/><div><strong>英国</strong><small>历史需求占比</small></div><div className="region-values"><b>{(ukDemand * 100).toFixed(1)}%</b><small>历史订单</small></div></div>
         <div className="region-stat"><span className="region-dot"/><div><strong>欧洲</strong><small>历史需求占比</small></div><div className="region-values"><b>{(euDemand * 100).toFixed(1)}%</b><small>历史订单</small></div></div>
       </div>
+    </div>
+  </section>
+}
+
+function SiteInventorySection({ siteInventory }: { siteInventory: SiteInventorySummary[] }) {
+  if (!siteInventory.length) return null
+  return <section className="section">
+    <div className="section-heading"><div><h2><PackageSearch size={20}/>区域库存分布</h2><p>按仓库维度「站点」归类，加拿大单独统计并与美国相邻展示。在库/在途均为成品件数。</p></div></div>
+    <div className="metric-grid">
+      {siteInventory.map((row) => <div className="metric-card" key={row.region}><span>{row.region}</span><strong>{row.onHand.toLocaleString('zh-CN')}</strong><small>在库量（件）</small><strong>{row.inTransit.toLocaleString('zh-CN')}</strong><small>在途量（件）</small></div>)}
     </div>
   </section>
 }
