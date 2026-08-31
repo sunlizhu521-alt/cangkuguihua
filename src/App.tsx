@@ -206,7 +206,7 @@ export default function App() {
     : page === 'mapping' ? <MappingPage files={files} selected={selectedFile ?? files[0]} uploading={uploading} onSelect={setSelectedFile} onUpload={handleUpload} onSave={saveMapping}/>
     : page === 'quotes' ? <QuotePage quotes={quotes} aiSettings={aiSettings} busySlot={busySlot} onUpload={uploadQuote} onApply={applyQuote} onSaveAi={saveAiSettings} onTestAi={testAi}/>
     : page === 'settings' ? <SettingsPage settings={analysisSettings} addresses={addresses} onSaveSettings={saveAnalysisSettings} onSaveAddress={saveAddress} onDeleteAddress={async (id) => { if (id) await db.warehouseAddresses.delete(id); await refreshData() }}/>
-    : page === 'salesHeatmap' ? <SalesHeatmapPage/>
+    : page === 'salesHeatmap' ? <SalesHeatmapPage history={history}/>
     : page === 'inventoryHeatmap' ? <InventoryHeatmapPage/>
     : page === 'inventoryAnalysis' ? <InventoryAnalysisPage/>
     : <ResultsPage results={results} addresses={addresses} manualQuotes={manualQuotes} history={history} siteInventory={siteInventory} running={running} onRun={runAnalysis} onAddManualQuote={async (quote) => { await db.manualTransferQuotes.add(quote); await refreshData(); notify('自行寻找的中转报价已保存，正在重新测算'); await runAnalysis() }} onDeleteManualQuote={async (id) => { if (id) await db.manualTransferQuotes.delete(id); await refreshData(); notify('自行询价已删除') }} onExport={() => exportAnalysisWorkbook(results, analysisSettings, files, quotes, manualQuotes)}/>
