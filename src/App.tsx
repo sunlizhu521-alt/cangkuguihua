@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
 import AppShell from './components/AppShell'
 import FileLibraryPage from './pages/FileLibraryPage'
+import InventoryAnalysisPage from './pages/InventoryAnalysisPage'
+import InventoryHeatmapPage from './pages/InventoryHeatmapPage'
 import MappingPage from './pages/MappingPage'
 import QuotePage from './pages/QuotePage'
 import ResultsPage, { type HistoricalSummary } from './pages/ResultsPage'
+import SalesHeatmapPage from './pages/SalesHeatmapPage'
 import SettingsPage from './pages/SettingsPage'
 import { defaultAddresses, defaultAnalysisSettings, defaultQuoteSlots, stateRegions } from './data'
 import { db, getSetting, saveFile, saveQuote, settingKeys, setSetting, updateFileMapping } from './storage'
@@ -203,6 +206,9 @@ export default function App() {
     : page === 'mapping' ? <MappingPage files={files} selected={selectedFile ?? files[0]} uploading={uploading} onSelect={setSelectedFile} onUpload={handleUpload} onSave={saveMapping}/>
     : page === 'quotes' ? <QuotePage quotes={quotes} aiSettings={aiSettings} busySlot={busySlot} onUpload={uploadQuote} onApply={applyQuote} onSaveAi={saveAiSettings} onTestAi={testAi}/>
     : page === 'settings' ? <SettingsPage settings={analysisSettings} addresses={addresses} onSaveSettings={saveAnalysisSettings} onSaveAddress={saveAddress} onDeleteAddress={async (id) => { if (id) await db.warehouseAddresses.delete(id); await refreshData() }}/>
+    : page === 'salesHeatmap' ? <SalesHeatmapPage/>
+    : page === 'inventoryHeatmap' ? <InventoryHeatmapPage/>
+    : page === 'inventoryAnalysis' ? <InventoryAnalysisPage/>
     : <ResultsPage results={results} addresses={addresses} manualQuotes={manualQuotes} history={history} siteInventory={siteInventory} running={running} onRun={runAnalysis} onAddManualQuote={async (quote) => { await db.manualTransferQuotes.add(quote); await refreshData(); notify('自行寻找的中转报价已保存，正在重新测算'); await runAnalysis() }} onDeleteManualQuote={async (id) => { if (id) await db.manualTransferQuotes.delete(id); await refreshData(); notify('自行询价已删除') }} onExport={() => exportAnalysisWorkbook(results, analysisSettings, files, quotes, manualQuotes)}/>
 
   return <AppShell page={page} onNavigate={setPage}>{message ? <div className={`toast ${message.tone}`}>{message.text}</div> : null}{pageContent}</AppShell>

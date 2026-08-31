@@ -1,4 +1,4 @@
-import { BarChart3, Database, FileSpreadsheet, PanelLeftClose, Settings2, SlidersHorizontal } from 'lucide-react'
+import { BarChart3, Boxes, Database, FileSpreadsheet, Flame, PanelLeftClose, Settings2, SlidersHorizontal, TrendingUp } from 'lucide-react'
 import type { PageId } from '../types'
 
 const navItems: Array<{ id: PageId; label: string; icon: typeof Database }> = [
@@ -6,6 +6,9 @@ const navItems: Array<{ id: PageId; label: string; icon: typeof Database }> = [
   { id: 'quotes', label: '仓库报价', icon: FileSpreadsheet },
   { id: 'mapping', label: '字段映射', icon: SlidersHorizontal },
   { id: 'settings', label: '分析设置', icon: Settings2 },
+  { id: 'salesHeatmap', label: '销售热力图', icon: Flame },
+  { id: 'inventoryHeatmap', label: '库存热力图', icon: Boxes },
+  { id: 'inventoryAnalysis', label: '库存分析', icon: TrendingUp },
   { id: 'results', label: '分析结果', icon: BarChart3 },
 ]
 

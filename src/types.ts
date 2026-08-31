@@ -1,4 +1,4 @@
-export type PageId = 'files' | 'quotes' | 'mapping' | 'settings' | 'results'
+export type PageId = 'files' | 'quotes' | 'mapping' | 'settings' | 'results' | 'salesHeatmap' | 'inventoryHeatmap' | 'inventoryAnalysis'
 
 export type FileSlotId =
   | 'inventory'
