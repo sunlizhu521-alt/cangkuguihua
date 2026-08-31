@@ -47,6 +47,7 @@ export default function App() {
   const [results, setResults] = useState<AnalysisResult[]>([])
   const [history, setHistory] = useState<HistoricalSummary>(() => emptyHistoricalSummary())
   const [siteInventory, setSiteInventory] = useState<SiteInventorySummary[]>([])
+  const [regionInventory, setRegionInventory] = useState<Record<DemandRegion, number>>({ 美西: 0, 美中: 0, 美东: 0, 加拿大: 0, 英国: 0, 欧洲: 0 })
 
   const refreshData = async () => {
     const [nextFiles, nextQuotes, nextAddresses, nextManual, savedResults] = await Promise.all([db.files.toArray(), db.quotes.orderBy('slot').toArray(), db.warehouseAddresses.toArray(), db.manualTransferQuotes.toArray(), db.results.orderBy('createdAt').last()])
@@ -165,13 +166,14 @@ export default function App() {
       const warehouses = parseWarehouses(warehouseFile).map((row) => ({ ...row, region: addressRegion.get(row.code) ?? row.region }))
       const warehouseCodeByName = new Map(warehouses.map((row) => [row.name, row.code]))
       const warehouseSiteRegionByName = new Map(warehouses.map((row) => [row.name, row.siteRegion]).filter((pair): pair is [string, SiteRegion] => Boolean(pair[1])))
+      const warehouseRegionByName = new Map(warehouses.map((row) => [row.name, row.region]))
       const productFile = valid('product')
       const seriesByProduct = new Map(productFile ? readMappedRows(productFile).flatMap((row) => {
         const productCode = String(row['商品编码'] ?? '').trim() || String(row['SKU'] ?? '').trim()
         const series = String(row['销售系列'] ?? '').trim() || String(row['销售产品线'] ?? '').trim()
         return productCode && series ? [[productCode, series] as const] : []
       }) : [])
-      inventory = inventory.map((row) => ({ ...row, warehouseCode: warehouseCodeByName.get(row.warehouseName) ?? row.warehouseName, series: seriesByProduct.get(row.productCode) || row.productCode, siteRegion: warehouseSiteRegionByName.get(row.warehouseName) }))
+      inventory = inventory.map((row) => ({ ...row, warehouseCode: warehouseCodeByName.get(row.warehouseName) ?? row.warehouseName, series: seriesByProduct.get(row.productCode) || row.productCode, siteRegion: warehouseSiteRegionByName.get(row.warehouseName), region: warehouseRegionByName.get(row.warehouseName) }))
       const activePackages = quotes.filter((quote) => quote.status === '已应用' && quote.activeRules.length)
       const packages = activePackages.length ? activePackages : [{ ...defaultQuoteSlots[0], logisticsCompany: '未配置物流商报价' }]
       const candidates = packages.flatMap((quote) => optimizeTransfers({ inventory, forecast, packaging, warehouses, activeRules: quote.activeRules, manualQuotes: latestManualQuotes, settings: analysisSettings, merchantDemandShare: historic.commonDateRange ? historic.channelMerchantShare : 1 }).map((row) => ({ ...row, transferResource: row.transferResource === '物流商中转' ? `${quote.logisticsCompany}中转` : row.transferResource, decision: historic.commonDateRange ? row.decision : '待补数据' as const, transferQuantity: historic.commonDateRange ? row.transferQuantity : 0, transferRatio: historic.commonDateRange ? row.transferRatio : 0, dataQualityMessages: [...row.dataQualityMessages, ...(quote.activeRules.length ? [] : ['尚未应用仓库报价，费用结果仅供数据检查']), ...(historic.commonDateRange ? [] : ['历史出库共同区间不足，不生成正式调拨建议'])] })))
@@ -183,8 +185,8 @@ export default function App() {
       }
       const rows = [...bestByGroup.values()]
       await db.results.put({ id: crypto.randomUUID(), createdAt: new Date().toISOString(), rows })
-      const regionOrder: SiteRegion[] = ['美国', '加拿大', '英国', '欧洲']
-      const nextSiteInventory: SiteInventorySummary[] = regionOrder.map((region) => {
+      const siteRegionOrder: SiteRegion[] = ['美国', '加拿大', '英国', '欧洲']
+      const nextSiteInventory: SiteInventorySummary[] = siteRegionOrder.map((region) => {
         const rows = inventory.filter((row) => row.siteRegion === region)
         const onHand = rows.filter((row) => row.inventoryStatus === '在库').reduce((sum, row) => sum + row.quantity, 0)
         const inTransit = rows.filter((row) => row.inventoryStatus === '在途').reduce((sum, row) => sum + row.quantity, 0)
@@ -196,6 +198,18 @@ export default function App() {
         return { region, onHand, inTransit, dailyDemand, safetyStock, coverageDays, status }
       })
       setSiteInventory(nextSiteInventory)
+      const regionOrder: DemandRegion[] = ['美西', '美中', '美东', '加拿大', '英国', '欧洲']
+      const nextRegionInventory: Record<DemandRegion, number> = { 美西: 0, 美中: 0, 美东: 0, 加拿大: 0, 英国: 0, 欧洲: 0 }
+      for (const row of inventory) {
+        if (row.inventoryStatus !== '在库') continue
+        let region: DemandRegion | undefined
+        if (row.siteRegion === '美国') region = row.region
+        else if (row.siteRegion === '加拿大') region = '加拿大'
+        else if (row.siteRegion === '英国') region = '英国'
+        else if (row.siteRegion === '欧洲') region = '欧洲'
+        if (region) nextRegionInventory[region] += row.quantity
+      }
+      setRegionInventory(nextRegionInventory)
       setResults(rows)
       setPage('results'); notify(`测算完成，共生成 ${rows.length} 条结果`)
     } catch (error) { notify(error instanceof Error ? error.message : '测算失败', 'danger') }
@@ -207,7 +221,7 @@ export default function App() {
     : page === 'quotes' ? <QuotePage quotes={quotes} aiSettings={aiSettings} busySlot={busySlot} onUpload={uploadQuote} onApply={applyQuote} onSaveAi={saveAiSettings} onTestAi={testAi}/>
     : page === 'settings' ? <SettingsPage settings={analysisSettings} addresses={addresses} onSaveSettings={saveAnalysisSettings} onSaveAddress={saveAddress} onDeleteAddress={async (id) => { if (id) await db.warehouseAddresses.delete(id); await refreshData() }}/>
     : page === 'salesHeatmap' ? <SalesHeatmapPage history={history}/>
-    : page === 'inventoryHeatmap' ? <InventoryHeatmapPage/>
+    : page === 'inventoryHeatmap' ? <InventoryHeatmapPage regionInventory={regionInventory}/>
     : page === 'inventoryAnalysis' ? <InventoryAnalysisPage/>
     : <ResultsPage results={results} addresses={addresses} manualQuotes={manualQuotes} history={history} siteInventory={siteInventory} running={running} onRun={runAnalysis} onAddManualQuote={async (quote) => { await db.manualTransferQuotes.add(quote); await refreshData(); notify('自行寻找的中转报价已保存，正在重新测算'); await runAnalysis() }} onDeleteManualQuote={async (id) => { if (id) await db.manualTransferQuotes.delete(id); await refreshData(); notify('自行询价已删除') }} onExport={() => exportAnalysisWorkbook(results, analysisSettings, files, quotes, manualQuotes)}/>
 

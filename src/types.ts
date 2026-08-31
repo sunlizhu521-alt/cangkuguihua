@@ -131,6 +131,7 @@ export interface InventoryRecord {
   warehouseCode: string
   warehouseName: string
   siteRegion?: SiteRegion
+  region?: WarehouseRegion
   productCode: string
   series: string
   quantity: number
