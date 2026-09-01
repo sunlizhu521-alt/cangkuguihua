@@ -355,8 +355,9 @@ function buildHistory(files: StoredFile[]): HistoryBuildResult {
   const datesA = amazon.map((row) => row.date).filter(Boolean).sort(), datesM = merchant.map((row) => row.date).filter(Boolean).sort()
   const start = [datesA[0], datesM[0]].filter(Boolean).sort().at(-1), end = [datesA.at(-1), datesM.at(-1)].filter(Boolean).sort()[0]
   if (!start || !end || start > end) {
-    const dateSummary = (label: string, rows: OutboundRecord[], dates: string[]) => `${label}解析${rows.length.toLocaleString('zh-CN')}条、有效日期${dates.length.toLocaleString('zh-CN')}条${dates.length ? `（${dates[0]}至${dates.at(-1)}）` : ''}`
-    const detail = `${dateSummary('亚马逊仓配', amazon, datesA)}；${dateSummary('商家自发货', merchant, datesM)}`
+    const dataBytes = (file: StoredFile) => Number((file.data as ArrayBuffer | ArrayBufferView | undefined)?.byteLength ?? 0)
+    const dateSummary = (label: string, file: StoredFile, rows: OutboundRecord[], dates: string[]) => `${label}文件${dataBytes(file).toLocaleString('zh-CN')}字节、解析${rows.length.toLocaleString('zh-CN')}条、有效日期${dates.length.toLocaleString('zh-CN')}条${dates.length ? `（${dates[0]}至${dates.at(-1)}）` : ''}`
+    const detail = `${dateSummary('亚马逊仓配', amazonFile, amazon, datesA)}；${dateSummary('商家自发货', merchantFile, merchant, datesM)}`
     return { summary: { channelAmazonShare: 0, channelMerchantShare: 0, postcodeCoverage: 0, regionDemand: { 美西: 0, 美中: 0, 美东: 0, 英国: 0, 加拿大: 0, 欧洲: 0 }, regionDemandAmount: { 美西: 0, 美中: 0, 美东: 0, 英国: 0, 加拿大: 0, 欧洲: 0 }, stateDemand: {}, siteDailyDemand: { 美国: 0, 加拿大: 0, 英国: 0, 欧洲: 0 }, messages: [`两类历史出库没有共同覆盖日期区间，不生成正式地区建议；${detail}`] }, resolvedRows: [] }
   }
   const a = amazon.filter((row) => row.date >= start && row.date <= end), m = merchant.filter((row) => row.date >= start && row.date <= end), all = [...a, ...m]
