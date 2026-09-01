@@ -27,6 +27,7 @@ interface UsStatesMapProps {
   stateValues: Record<string, number>
   warehouses?: Array<{ code: string; state: string }>
   valueLabel?: string
+  maxValue?: number
 }
 
 interface UsaLocation {
@@ -35,12 +36,12 @@ interface UsaLocation {
   path: string
 }
 
-export default function UsStatesMap({ stateValues, warehouses = [], valueLabel = '订单量' }: UsStatesMapProps) {
+export default function UsStatesMap({ stateValues, warehouses = [], valueLabel = '订单量', maxValue }: UsStatesMapProps) {
   const [tooltip, setTooltip] = useState<{ x: number; y: number; name: string; abbr: string; region: string; value: number; ratio: string } | null>(null)
   const [stateCenters, setStateCenters] = useState<Record<string, [number, number]>>({})
   const svgRef = useRef<SVGSVGElement>(null)
   const total = Object.values(stateValues).reduce((sum, v) => sum + v, 0)
-  const max = Math.max(1, ...Object.values(stateValues))
+  const max = Math.max(1, maxValue ?? Math.max(1, ...Object.values(stateValues)))
 
   useLayoutEffect(() => {
     const centers: Record<string, [number, number]> = {}

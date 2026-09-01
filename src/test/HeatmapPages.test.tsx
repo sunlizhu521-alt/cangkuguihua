@@ -55,12 +55,15 @@ describe('州级真实轮廓热力图页面接入', () => {
   })
 
   it('库存热力图只把美国州库存传入州地图，海外按在库加在途展示真实轮廓', async () => {
-    render(<InventoryHeatmapPage siteInventory={siteInventory} stateInventory={{ CA: 20 }} addresses={addresses}/>)
+    render(<InventoryHeatmapPage siteInventory={siteInventory} stateInventory={{ CA: 13, TX: 20 }} addresses={addresses}/>)
 
-    expect(screen.getByRole('img', { name: '美国各州在库量分布图' })).toBeInTheDocument()
+    const usMap = screen.getByRole('img', { name: '美国各州在库量分布图' })
     const internationalMap = screen.getByRole('img', { name: '加拿大、英国和欧洲库存分布图' })
     expect(internationalMap.querySelectorAll('path')).toHaveLength(29)
     expect(screen.getAllByText('13 件')).not.toHaveLength(0)
+    expect(usMap.querySelector('path[data-state="CA"]')).toHaveAttribute('fill', internationalMap.querySelector('path[data-country="加拿大"]')?.getAttribute('fill'))
+    expect(internationalMap.querySelector('path[data-country="德国"]')).toHaveAttribute('fill', internationalMap.querySelector('path[data-country="法国"]')?.getAttribute('fill'))
+    expect(internationalMap.querySelector('path[data-country="英国"]')?.getAttribute('fill')).not.toBe(internationalMap.querySelector('path[data-country="德国"]')?.getAttribute('fill'))
     const germany = internationalMap.querySelector('path[data-country="德国"]')
     expect(germany).toBeInTheDocument()
     fireEvent.mouseEnter(germany!, { clientX: 100, clientY: 100 })
