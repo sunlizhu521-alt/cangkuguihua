@@ -56,13 +56,15 @@ function detailRatio(region: DemandRegion, quantity: number, usTotal: number, al
 }
 
 export function aggregateSalesHeatmapDetails(rows: ResolvedOutboundRecord[], metadata: Map<string, ProductMetadata>, listingMap: Map<string, string>): SalesHeatmapSkuDetail[] {
-  const quantities = new Map<string, { region: DemandRegion; sku: string; orderQuantity: number }>()
+  const quantities = new Map<string, { region: DemandRegion; sku: string; amazonQuantity: number; merchantQuantity: number; orderQuantity: number }>()
   for (const { row, region } of rows) {
     if (!row.productCode || row.quantity <= 0) continue
     const key = `${region}\u0000${productKey(row.productCode)}`
-    const current = quantities.get(key)
-    if (current) current.orderQuantity += row.quantity
-    else quantities.set(key, { region, sku: row.productCode, orderQuantity: row.quantity })
+    const current = quantities.get(key) ?? { region, sku: row.productCode, amazonQuantity: 0, merchantQuantity: 0, orderQuantity: 0 }
+    if (row.channel === '亚马逊仓配') current.amazonQuantity += row.quantity
+    else current.merchantQuantity += row.quantity
+    current.orderQuantity += row.quantity
+    quantities.set(key, current)
   }
   const allTotal = [...quantities.values()].reduce((sum, row) => sum + row.orderQuantity, 0)
   const usTotal = [...quantities.values()].filter((row) => ['美东', '美西', '美中'].includes(row.region)).reduce((sum, row) => sum + row.orderQuantity, 0)

@@ -6,6 +6,10 @@ function outbound(productCode: string, quantity: number): OutboundRecord {
   return { productCode, series: productCode, date: '2026-08-01', postalCode: '', quantity, status: '', channel: '商家自发货' }
 }
 
+function amazonOutbound(productCode: string, quantity: number): OutboundRecord {
+  return { ...outbound(productCode, quantity), channel: '亚马逊仓配' }
+}
+
 function inventory(warehouseCode: string, productCode: string, quantity: number, inventoryStatus: InventoryRecord['inventoryStatus'], siteRegion: InventoryRecord['siteRegion']): InventoryRecord {
   return { warehouseCode, warehouseName: warehouseCode, productCode, series: productCode, quantity, inventoryStatus, productType: '成品', siteRegion }
 }
@@ -38,13 +42,14 @@ describe('热力图SKU级明细聚合', () => {
 
   it('销售明细先通过领星编码映射物料编码，未映射时保留原SKU直查兜底', () => {
     const details = aggregateSalesHeatmapDetails([
-      { row: outbound('listing-1', 60), region: '美东' },
+      { row: amazonOutbound('listing-1', 35), region: '美东' },
+      { row: outbound('listing-1', 25), region: '美东' },
       { row: outbound('MAT-1', 40), region: '美西' },
       { row: outbound('SKU-2', 20), region: '加拿大' },
       { row: outbound('UNKNOWN', 10), region: '欧洲' },
     ], metadata, listingMap)
 
-    expect(details.find((row) => row.sku === 'listing-1')).toMatchObject({ productLine: '产品线甲', series: '系列甲', ratio: 0.6 })
+    expect(details.find((row) => row.sku === 'listing-1')).toMatchObject({ productLine: '产品线甲', series: '系列甲', amazonQuantity: 35, merchantQuantity: 25, orderQuantity: 60, ratio: 0.6 })
     expect(details.find((row) => row.sku === 'MAT-1')?.ratio).toBe(0.4)
     expect(details.find((row) => row.sku === 'MAT-1')).toMatchObject({ productLine: '产品线甲', series: '系列甲' })
     expect(details.find((row) => row.region === '加拿大')?.ratio).toBeCloseTo(20 / 130)

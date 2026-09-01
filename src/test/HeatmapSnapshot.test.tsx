@@ -112,7 +112,7 @@ const siteInventory: SiteInventorySummary[] = [
 ]
 
 const salesDetails: SalesHeatmapSkuDetail[] = [
-  { region: '美西', productLine: '产品线甲', series: '系列甲', sku: 'SNAPSHOT-SKU', orderQuantity: 80, ratio: 0.4 },
+  { region: '美西', productLine: '产品线甲', series: '系列甲', sku: 'SNAPSHOT-SKU', amazonQuantity: 50, merchantQuantity: 30, orderQuantity: 80, ratio: 0.4 },
 ]
 
 const inventoryDetails: InventoryHeatmapSkuDetail[] = [
@@ -205,7 +205,7 @@ describe('热力图快照', () => {
     fireEvent.click(screen.getByRole('button', { name: '销售热力图' }))
     fireEvent.click(screen.getByRole('button', { name: '加载计算' }))
 
-    await waitFor(() => expect(storageMock.setSetting).toHaveBeenCalledWith('热力图快照', expect.objectContaining({ stateInventory: {}, inventoryDetails: [], salesDetails: [expect.objectContaining({ region: '美西', sku: '热力商品', productLine: '热力产品线', series: '热力系列', orderQuantity: 8 })] })))
+    await waitFor(() => expect(storageMock.setSetting).toHaveBeenCalledWith('热力图快照', expect.objectContaining({ stateInventory: {}, inventoryDetails: [], salesDetails: [expect.objectContaining({ region: '美西', sku: '热力商品', productLine: '热力产品线', series: '热力系列', amazonQuantity: 5, merchantQuantity: 3, orderQuantity: 8 })] })))
     expect(screen.getByText('热力商品')).toBeInTheDocument()
     expect(screen.getByText('热力产品线')).toBeInTheDocument()
     expect(screen.getByText('热力系列')).toBeInTheDocument()

@@ -212,7 +212,7 @@ describe('工作簿标题行解析', () => {
 
 describe('出库数据解析', () => {
   it('亚马逊仓配使用日期和SKU映射，内部销售系列使用SKU', () => {
-    const file = mappedFile('amazonOutbound', [{ sku: '商品一', date: '2026-08-01', quantity: 2, postal: '34986' }], { SKU: 'sku', 日期: 'date', 数量: 'quantity', 邮编: 'postal' })
+    const file = mappedFile('amazonOutbound', [{ sku: '商品一', date: 'Aug 1, 2026 12:03:57 AM PDT', quantity: 2, postal: '34986' }], { SKU: 'sku', 日期: 'date', 数量: 'quantity', 邮编: 'postal' })
     const rows = parseOutbound(file, '亚马逊仓配')
     expect(rows).toHaveLength(1)
     expect(rows[0].productCode).toBe('商品一')
@@ -263,6 +263,7 @@ describe('出库数据解析', () => {
   it('Excel日期对象和日期时间文本不会因时区提前一天', () => {
     expect(normalizeDate(new Date(2026, 7, 28, 3, 11, 16))).toBe('2026-08-28')
     expect(normalizeDate('2026-08-28 03:11:16')).toBe('2026-08-28')
+    expect(normalizeDate('Aug 1, 2026 12:03:57 AM PDT')).toBe('2026-08-01')
   })
 })
 

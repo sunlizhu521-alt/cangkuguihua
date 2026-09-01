@@ -124,7 +124,7 @@ export default function App() {
   }
 
   const saveMapping = async (file: StoredFile, mapping: Record<string, string>) => {
-    const selectedMapping = Object.fromEntries(Object.entries(mapping).filter(([, source]) => source))
+    const selectedMapping = Object.fromEntries(Object.entries(mapping).filter(([, source]) => source && file.headers.includes(source)))
     const selectedCount = Object.keys(selectedMapping).length
     const next = { ...file, mapping: selectedMapping, missingFields: [], validation: selectedCount ? '校验通过' as const : '待映射' as const, updatedAt: new Date().toISOString() }
     const id = await updateFileMapping(next)

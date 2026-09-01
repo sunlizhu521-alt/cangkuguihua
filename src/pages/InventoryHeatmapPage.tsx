@@ -1,4 +1,4 @@
-import { RefreshCw } from 'lucide-react'
+import { AlertTriangle, RefreshCw } from 'lucide-react'
 import { PageHeader } from '../components/Common'
 import HeatmapSkuDetailTable from '../components/HeatmapSkuDetailTable'
 import InventoryWorldMap from '../components/InventoryWorldMap'
@@ -9,6 +9,8 @@ export default function InventoryHeatmapPage({ siteInventory, stateInventory, ad
   const internationalRegions = ['加拿大', '英国', '欧洲'] as const
   const siteInventoryByRegion = new Map(siteInventory.map((row) => [row.region, row.onHand + row.inTransit]))
   const internationalTotal = internationalRegions.reduce((sum, region) => sum + (siteInventoryByRegion.get(region) ?? 0), 0)
+  const usSiteInventory = siteInventoryByRegion.get('美国') ?? 0
+  const mappedUsInventory = Object.values(stateInventory).reduce((sum, quantity) => sum + quantity, 0)
   const inventoryHeatMax = Math.max(1, ...Object.values(stateInventory), ...internationalRegions.map((region) => siteInventoryByRegion.get(region) ?? 0))
   const internationalInventory = { 加拿大: siteInventoryByRegion.get('加拿大') ?? 0, 英国: siteInventoryByRegion.get('英国') ?? 0, 欧洲: siteInventoryByRegion.get('欧洲') ?? 0 }
   const usRegionInventory: Record<WarehouseRegion, number> = { 美西: 0, 美中: 0, 美东: 0 }
@@ -25,6 +27,7 @@ export default function InventoryHeatmapPage({ siteInventory, stateInventory, ad
         <div className="us-map" style={{ alignSelf: 'start' }}><InventoryWorldMap stateValues={stateInventory} siteValues={internationalInventory} warehouses={warehouses} maxValue={inventoryHeatMax}/></div>
         <div className="map-side">
           {(['美西', '美中', '美东'] as WarehouseRegion[]).map((region) => <div className="region-stat" key={region}><span className={`region-dot ${region}`}/><div><strong>{region}</strong><small>美国州在库量</small></div><div className="region-values"><b>{usRegionInventory[region].toLocaleString('zh-CN')} 件</b><small>成品</small></div></div>)}
+          {usSiteInventory > 0 && mappedUsInventory === 0 ? <div className="map-warning"><AlertTriangle size={15}/>已读取美国库存 {usSiteInventory.toLocaleString('zh-CN')} 件，但没有匹配到仓库州配置。请将仓库维度“仓库”映射到真实编码，并在分析设置中用相同编码补充州。</div> : null}
           {internationalRegions.map((region) => <div className="region-stat" key={region}><span className="region-dot"/><div><strong>{region}</strong><small>在库量+在途量</small></div><div className="region-values"><b>{internationalInventory[region].toLocaleString('zh-CN')} 件</b><small>{internationalTotal > 0 ? `${((internationalInventory[region] / internationalTotal) * 100).toFixed(1)}%` : '0%'}</small></div></div>)}
         </div>
       </div>

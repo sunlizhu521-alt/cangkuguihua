@@ -76,4 +76,18 @@ describe('字段映射文件切换', () => {
     fireEvent.click(screen.getByRole('button', { name: '保存映射' }))
     expect(onSave).toHaveBeenCalledWith(amazon, {})
   })
+
+  it('重新上传后不保留当前文件中已经不存在的来源列', () => {
+    const warehouse = {
+      ...storedFile('warehouse', '仓库维度.xlsx'),
+      headers: ['编码', '金蝶名称', '站点'],
+      mapping: { 仓库: '仓库（事业部+物理位置）', 仓库名称: '金蝶名称', 站点: '站点' },
+    }
+    const onSave = vi.fn()
+    render(<MappingPage files={[warehouse]} selected={warehouse} onSelect={vi.fn()} onUpload={vi.fn().mockResolvedValue(undefined)} onSave={onSave} />)
+
+    expect(screen.getByText('已选择 2 个字段')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '保存映射' }))
+    expect(onSave).toHaveBeenCalledWith(warehouse, { 仓库名称: '金蝶名称', 站点: '站点' })
+  })
 })

@@ -52,6 +52,8 @@ export interface HeatmapSkuDetailBase {
 }
 
 export interface SalesHeatmapSkuDetail extends HeatmapSkuDetailBase {
+  amazonQuantity: number
+  merchantQuantity: number
   orderQuantity: number
 }
 

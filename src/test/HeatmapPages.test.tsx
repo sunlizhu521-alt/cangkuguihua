@@ -32,9 +32,9 @@ const siteInventory: SiteInventorySummary[] = [
 ]
 
 const salesDetails: SalesHeatmapSkuDetail[] = [
-  { region: '美东', productLine: '产品线甲', series: '系列甲', sku: 'SKU-A', orderQuantity: 100, ratio: 2 / 3 },
-  { region: '美东', productLine: '产品线乙', series: '系列乙', sku: 'SKU-B', orderQuantity: 50, ratio: 1 / 3 },
-  { region: '欧洲', productLine: '产品线欧', series: '系列欧', sku: 'SKU-EU', orderQuantity: 20, ratio: 0.1 },
+  { region: '美东', productLine: '产品线甲', series: '系列甲', sku: 'SKU-A', amazonQuantity: 70, merchantQuantity: 30, orderQuantity: 100, ratio: 2 / 3 },
+  { region: '美东', productLine: '产品线乙', series: '系列乙', sku: 'SKU-B', amazonQuantity: 20, merchantQuantity: 30, orderQuantity: 50, ratio: 1 / 3 },
+  { region: '欧洲', productLine: '产品线欧', series: '系列欧', sku: 'SKU-EU', amazonQuantity: 0, merchantQuantity: 20, orderQuantity: 20, ratio: 0.1 },
 ]
 
 const inventoryDetails: InventoryHeatmapSkuDetail[] = [
@@ -121,6 +121,12 @@ describe('州级真实轮廓热力图页面接入', () => {
     expect(screen.queryByText('CA-CANADA')).not.toBeInTheDocument()
   })
 
+  it('美国库存已读取但未匹配州配置时显示明确提示', () => {
+    render(<InventoryHeatmapPage siteInventory={siteInventory} stateInventory={{}} addresses={addresses} details={inventoryDetails} loading={false} onLoad={vi.fn()}/>)
+
+    expect(screen.getByText(/已读取美国库存 26 件，但没有匹配到仓库州配置/)).toBeInTheDocument()
+  })
+
   it('统一地图悬停仍使用美国全国占比和海外区域占比口径', () => {
     render(<InventoryHeatmapPage siteInventory={siteInventory} stateInventory={{ CA: 13, TX: 20 }} addresses={addresses} details={inventoryDetails} loading={false} onLoad={vi.fn()}/>)
 
@@ -190,7 +196,10 @@ describe('州级真实轮廓热力图页面接入', () => {
     expect(screen.getByRole('heading', { name: 'SKU级销售明细' })).toBeInTheDocument()
     expect(screen.getByText('美区组')).toBeInTheDocument()
     expect(screen.getByText('欧区组')).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: '订单数量' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '亚马逊仓配发货量' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '商家自发货发货量' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '合计发货量' })).toBeInTheDocument()
+    expect(screen.getByText('SKU-A').closest('tr')).toHaveTextContent('7030100')
 
     fireEvent.change(screen.getByRole('textbox', { name: '搜索SKU级明细' }), { target: { value: 'sku-b' } })
     expect(screen.getByText('SKU-B')).toBeInTheDocument()

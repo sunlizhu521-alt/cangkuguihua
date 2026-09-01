@@ -33,6 +33,11 @@ export function normalizeDate(value: unknown): string {
   }
   const calendarDate = String(value ?? '').trim().match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/)
   if (calendarDate) return `${calendarDate[1]}-${calendarDate[2].padStart(2, '0')}-${calendarDate[3].padStart(2, '0')}`
+  const englishDate = String(value ?? '').trim().match(/^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2}),\s+(\d{4})(?:\s|$)/i)
+  if (englishDate) {
+    const month = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'].indexOf(englishDate[1].toLowerCase()) + 1
+    return `${englishDate[3]}-${String(month).padStart(2, '0')}-${englishDate[2].padStart(2, '0')}`
+  }
   const date = new Date(String(value ?? ''))
   return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10)
 }

@@ -39,7 +39,7 @@ export default function MappingPage({ files, selected, uploading, onSelect, onUp
 
 function MappingEditor({ file, fields, onSave }: { file: StoredFile; fields: string[]; onSave: (file: StoredFile, mapping: Record<string, string>) => void }) {
   const [mapping, setMapping] = useState<Record<string, string>>(() => Object.fromEntries(
-    fields.flatMap((field) => file.mapping[field] ? [[field, file.mapping[field]]] : []),
+    fields.flatMap((field) => file.mapping[field] && file.headers.includes(file.mapping[field]) ? [[field, file.mapping[field]]] : []),
   ))
   const selectedCount = Object.values(mapping).filter(Boolean).length
   return <div>
