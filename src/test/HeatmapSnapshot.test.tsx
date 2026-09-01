@@ -137,17 +137,18 @@ afterEach(() => {
 })
 
 describe('热力图快照', () => {
-  it('兼容恢复尚未包含SKU明细的旧快照', async () => {
+  it('统计口径升级后自动清除旧版本快照，避免继续显示历史错误数量', async () => {
     storageMock.values.set('热力图快照', { history, siteInventory, stateInventory: { CA: 13 }, savedAt: '2026-09-01T00:00:00.000Z' })
     render(<App/>)
 
     await waitFor(() => expect(storageMock.getSetting).toHaveBeenCalledWith('热力图快照', null))
+    await waitFor(() => expect(storageMock.db.settings.delete).toHaveBeenCalledWith('热力图快照'))
     fireEvent.click(screen.getByRole('button', { name: '销售热力图' }))
     expect(screen.getByText('请运行分析生成SKU级明细')).toBeInTheDocument()
   })
 
   it('页面加载时恢复快照，清空文件后同步删除且不残留旧数据', async () => {
-    storageMock.values.set('热力图快照', { history, siteInventory, stateInventory: { CA: 13 }, salesDetails, inventoryDetails, savedAt: '2026-09-01T00:00:00.000Z' })
+    storageMock.values.set('热力图快照', { version: 2, history, siteInventory, stateInventory: { CA: 13 }, salesDetails, inventoryDetails, savedAt: '2026-09-01T00:00:00.000Z' })
     render(<App/>)
 
     await waitFor(() => expect(storageMock.getSetting).toHaveBeenCalledWith('热力图快照', null))
@@ -173,8 +174,9 @@ describe('热力图快照', () => {
     fireEvent.click(screen.getByRole('button', { name: '分析结果' }))
     fireEvent.click(screen.getByRole('button', { name: '重新测算' }))
 
-    await waitFor(() => expect(storageMock.setSetting).toHaveBeenCalledWith('热力图快照', expect.objectContaining({ stateInventory: { CA: 7 }, savedAt: expect.any(String) })))
-    const saved = storageMock.values.get('热力图快照') as { history: HistoricalSummary; siteInventory: SiteInventorySummary[]; stateInventory: Record<string, number>; salesDetails: SalesHeatmapSkuDetail[]; inventoryDetails: InventoryHeatmapSkuDetail[]; salesLocationDetails: unknown[]; inventoryLocationDetails: unknown[]; savedAt: string }
+    await waitFor(() => expect(storageMock.setSetting).toHaveBeenCalledWith('热力图快照', expect.objectContaining({ version: 2, stateInventory: { CA: 7 }, savedAt: expect.any(String) })))
+    const saved = storageMock.values.get('热力图快照') as { version: number; history: HistoricalSummary; siteInventory: SiteInventorySummary[]; stateInventory: Record<string, number>; salesDetails: SalesHeatmapSkuDetail[]; inventoryDetails: InventoryHeatmapSkuDetail[]; salesLocationDetails: unknown[]; inventoryLocationDetails: unknown[]; savedAt: string }
+    expect(saved.version).toBe(2)
     expect(saved.history.messages).toContain('亚马逊仓配与商家自发货历史出库数据未同时通过校验，不生成正式地区建议')
     expect(saved.siteInventory.find((row) => row.region === '美国')?.onHand).toBe(7)
     expect(saved.stateInventory).toEqual({ CA: 7 })

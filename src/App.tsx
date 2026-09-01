@@ -24,7 +24,10 @@ const defaultAiSettings: AiSettings = {
   provider: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5-mini', secret: '', workerUrl: '', connectionStatus: '未测试',
 }
 
+const HEATMAP_SNAPSHOT_VERSION = 2
+
 type HeatmapSnapshot = {
+  version?: number
   history: HistoricalSummary
   siteInventory: SiteInventorySummary[]
   regionInventory?: Record<DemandRegion, number>
@@ -94,7 +97,7 @@ export default function App() {
     setManualQuotes(nextManual)
     setResults(savedResults?.rows ?? [])
     const snapshot = await getSetting<HeatmapSnapshot | null>(settingKeys.heatmapSnapshot, null)
-    if (snapshot) {
+    if (snapshot?.version === HEATMAP_SNAPSHOT_VERSION) {
       const restoredRegionInventory = snapshot.regionInventory ?? (() => {
         const totals: Record<DemandRegion, number> = { 美西: 0, 美中: 0, 美东: 0, 加拿大: 0, 英国: 0, 欧洲: 0 }
         Object.entries(snapshot.stateInventory).forEach(([state, quantity]) => {
@@ -111,6 +114,8 @@ export default function App() {
       setInventoryDetails(snapshot.inventoryDetails ?? [])
       setSalesLocationDetails(snapshot.salesLocationDetails ?? [])
       setInventoryLocationDetails(snapshot.inventoryLocationDetails ?? [])
+    } else if (snapshot) {
+      await db.settings.delete(settingKeys.heatmapSnapshot)
     }
   }
 
@@ -336,7 +341,7 @@ export default function App() {
     setInventoryDetails(nextInventoryDetails)
     setSalesLocationDetails(nextSalesLocationDetails)
     setInventoryLocationDetails(nextInventoryLocationDetails)
-    await setSetting(settingKeys.heatmapSnapshot, { history: historic, siteInventory: nextSiteInventory, regionInventory: nextRegionInventory, stateInventory: nextStateInventory, salesDetails: nextSalesDetails, inventoryDetails: nextInventoryDetails, salesLocationDetails: nextSalesLocationDetails, inventoryLocationDetails: nextInventoryLocationDetails, savedAt: new Date().toISOString() })
+    await setSetting(settingKeys.heatmapSnapshot, { version: HEATMAP_SNAPSHOT_VERSION, history: historic, siteInventory: nextSiteInventory, regionInventory: nextRegionInventory, stateInventory: nextStateInventory, salesDetails: nextSalesDetails, inventoryDetails: nextInventoryDetails, salesLocationDetails: nextSalesLocationDetails, inventoryLocationDetails: nextInventoryLocationDetails, savedAt: new Date().toISOString() })
     return { history: historic, inventory, warehouses, warnings }
   }
 
