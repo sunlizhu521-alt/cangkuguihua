@@ -49,6 +49,7 @@ export interface HeatmapSkuDetailBase {
   series: string
   model?: string
   sku: string
+  sourceCode?: string
   ratio: number
 }
 
@@ -71,6 +72,7 @@ export interface HeatmapLocationDetailBase {
   series: string
   model: string
   sku: string
+  sourceCode?: string
 }
 
 export interface SalesHeatmapLocationDetail extends HeatmapLocationDetailBase {

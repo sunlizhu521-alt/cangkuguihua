@@ -32,7 +32,7 @@ const siteInventory: SiteInventorySummary[] = [
 ]
 
 const salesDetails: SalesHeatmapSkuDetail[] = [
-  { region: '美东', productLine: '产品线甲', series: '系列甲', model: '型号甲', sku: 'SKU-A', amazonQuantity: 70, merchantQuantity: 30, orderQuantity: 100, ratio: 2 / 3 },
+  { region: '美东', productLine: '产品线甲', series: '系列甲', model: '型号甲', sku: 'SKU-A', sourceCode: 'V-SALES-A', amazonQuantity: 70, merchantQuantity: 30, orderQuantity: 100, ratio: 2 / 3 },
   { region: '美东', productLine: '产品线乙', series: '系列乙', model: '型号乙', sku: 'SKU-B', amazonQuantity: 20, merchantQuantity: 30, orderQuantity: 50, ratio: 1 / 3 },
   { region: '欧洲', productLine: '产品线欧', series: '系列欧', model: '型号欧', sku: 'SKU-EU', amazonQuantity: 0, merchantQuantity: 20, orderQuantity: 20, ratio: 0.1 },
 ]
@@ -207,21 +207,22 @@ describe('州级真实轮廓热力图页面接入', () => {
 
     const filterRow = screen.getByLabelText('热力图商品筛选器')
     expect(filterRow).toContainElement(screen.getByRole('combobox', { name: '销售产品线筛选' }))
-    for (const label of ['搜索SKU级明细', '区域筛选', '数量排序']) expect(filterRow).toContainElement(screen.getByLabelText(label))
+    for (const label of ['搜索商品编码级明细', '区域筛选', '数量排序']) expect(filterRow).toContainElement(screen.getByLabelText(label))
     expect(container.querySelector('.sku-detail-controls')).not.toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'SKU级销售明细' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '商品编码级销售明细' })).toBeInTheDocument()
     expect(screen.getByText('美区组')).toBeInTheDocument()
     expect(screen.getByText('欧区组')).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: '亚马逊仓配发货量' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: '商家自发货发货量' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: '合计发货量' })).toBeInTheDocument()
-    expect(screen.getByText('SKU-A').closest('tr')).toHaveTextContent('7030100')
+    expect(screen.getByRole('columnheader', { name: '销售端编码' })).toBeInTheDocument()
+    expect(screen.getByText('SKU-A').closest('tr')).toHaveTextContent('V-SALES-A7030100')
 
-    fireEvent.change(screen.getByRole('textbox', { name: '搜索SKU级明细' }), { target: { value: 'sku-b' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '搜索商品编码级明细' }), { target: { value: 'sku-b' } })
     expect(screen.getByText('SKU-B')).toBeInTheDocument()
     expect(screen.queryByText('SKU-A')).not.toBeInTheDocument()
 
-    fireEvent.change(screen.getByRole('textbox', { name: '搜索SKU级明细' }), { target: { value: '' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '搜索商品编码级明细' }), { target: { value: '' } })
     fireEvent.change(screen.getByRole('combobox', { name: '区域筛选' }), { target: { value: '欧洲' } })
     expect(screen.getByText('SKU-EU')).toBeInTheDocument()
     expect(screen.queryByText('SKU-A')).not.toBeInTheDocument()
@@ -236,7 +237,7 @@ describe('州级真实轮廓热力图页面接入', () => {
   it('库存SKU明细分别显示在库、在途、合计和占比', () => {
     render(<InventoryHeatmapPage siteInventory={siteInventory} stateInventory={{ CA: 13 }} addresses={addresses} details={inventoryDetails} loading={false} onLoad={vi.fn()}/>)
 
-    expect(screen.getByRole('heading', { name: 'SKU级库存明细' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '商品编码级库存明细' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: '在库量（件）' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: '在途量（件）' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: '合计（件）' })).toBeInTheDocument()

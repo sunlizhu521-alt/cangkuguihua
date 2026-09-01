@@ -14,7 +14,7 @@ function inventory(warehouseCode: string, productCode: string, quantity: number,
   return { warehouseCode, warehouseName: warehouseCode, productCode, series: productCode, quantity, inventoryStatus, productType: '成品', siteRegion }
 }
 
-describe('热力图SKU级明细聚合', () => {
+describe('热力图商品编码级明细聚合', () => {
   const metadata = buildProductMetadata([
     { '商品编码': 'MAT-1', SKU: 'sku-1', '销售系列': '系列甲', '销售产品线': '产品线甲', '型号': '型号甲' },
     { SKU: 'SKU-2', '销售系列': '系列乙', '销售产品线': '产品线乙', '型号': '型号乙' },
@@ -30,17 +30,17 @@ describe('热力图SKU级明细聚合', () => {
   })
 
   it('商品维度以商品编码为主键、SKU为备用键，且产品线与系列分开保留', () => {
-    expect(metadata.get('SKU-1')).toEqual({ productLine: '产品线甲', series: '系列甲', model: '型号甲' })
-    expect(metadata.get('MAT-1')).toEqual({ productLine: '产品线甲', series: '系列甲', model: '型号甲' })
-    expect(metadata.get('SKU-2')).toEqual({ productLine: '产品线乙', series: '系列乙', model: '型号乙' })
+    expect(metadata.get('SKU-1')).toEqual({ productCode: 'MAT-1', productLine: '产品线甲', series: '系列甲', model: '型号甲' })
+    expect(metadata.get('MAT-1')).toEqual({ productCode: 'MAT-1', productLine: '产品线甲', series: '系列甲', model: '型号甲' })
+    expect(metadata.get('SKU-2')).toEqual({ productCode: 'SKU-2', productLine: '产品线乙', series: '系列乙', model: '型号乙' })
     const collision = buildProductMetadata([
       { '商品编码': 'MAT-PRIMARY', SKU: 'SKU-A', '销售系列': '主系列', '销售产品线': '主产品线' },
       { '商品编码': 'MAT-OTHER', SKU: 'MAT-PRIMARY', '销售系列': '备用系列', '销售产品线': '备用产品线' },
     ])
-    expect(collision.get('MAT-PRIMARY')).toEqual({ productLine: '主产品线', series: '主系列', model: '' })
+    expect(collision.get('MAT-PRIMARY')).toEqual({ productCode: 'MAT-PRIMARY', productLine: '主产品线', series: '主系列', model: '' })
   })
 
-  it('销售明细先通过领星编码映射物料编码，未映射时保留原SKU直查兜底', () => {
+  it('销售明细按映射后的物料商品编码聚合展示，并单独保留销售端编码', () => {
     const details = aggregateSalesHeatmapDetails([
       { row: amazonOutbound('listing-1', 35), region: '美东' },
       { row: outbound('listing-1', 25), region: '美东' },
@@ -49,11 +49,36 @@ describe('热力图SKU级明细聚合', () => {
       { row: outbound('UNKNOWN', 10), region: '欧洲' },
     ], metadata, listingMap)
 
-    expect(details.find((row) => row.sku === 'listing-1')).toMatchObject({ productLine: '产品线甲', series: '系列甲', model: '型号甲', amazonQuantity: 35, merchantQuantity: 25, orderQuantity: 60, ratio: 0.6 })
-    expect(details.find((row) => row.sku === 'MAT-1')?.ratio).toBe(0.4)
-    expect(details.find((row) => row.sku === 'MAT-1')).toMatchObject({ productLine: '产品线甲', series: '系列甲' })
+    expect(details.filter((row) => row.sku === 'MAT-1')).toHaveLength(2)
+    expect(details.find((row) => row.sku === 'MAT-1' && row.region === '美东')).toMatchObject({ sourceCode: 'listing-1', productLine: '产品线甲', series: '系列甲', model: '型号甲', amazonQuantity: 35, merchantQuantity: 25, orderQuantity: 60, ratio: 0.6 })
+    expect(details.find((row) => row.sku === 'MAT-1' && row.region === '美西')?.ratio).toBe(0.4)
     expect(details.find((row) => row.region === '加拿大')?.ratio).toBeCloseTo(20 / 130)
-    expect(details.find((row) => row.sku === 'UNKNOWN')).toMatchObject({ productLine: '', series: '' })
+    expect(details.find((row) => row.sourceCode === 'UNKNOWN')).toMatchObject({ sku: '', productLine: '', series: '' })
+  })
+
+  it('亚马逊销售端编码先映射内部编码，再从商品维度取得最终物料商品编码', () => {
+    const z21Metadata = buildProductMetadata([
+      { '商品编码': 1007010440, SKU: 'Z21-A-RD-PU-4.1', '销售产品线': '助行器', '销售系列': '21系列', '型号': 'Z21' },
+    ])
+    const z21ListingMap = buildListingMaterialMap([
+      { '领星商品编码': 'V-RL-Z21-RD-D1', '物料编码': 'Z21-A-RD-PU-4.1' },
+    ])
+
+    expect(aggregateSalesHeatmapDetails([
+      { row: amazonOutbound('V-RL-Z21-RD-D1', 8), region: '美西' },
+    ], z21Metadata, z21ListingMap)).toMatchObject([
+      { sku: '1007010440', sourceCode: 'V-RL-Z21-RD-D1', productLine: '助行器', series: '21系列', model: 'Z21', orderQuantity: 8 },
+    ])
+  })
+
+  it('同一区域多个销售端编码映射到同一物料商品编码时合并为一行', () => {
+    const combined = aggregateSalesHeatmapDetails([
+      { row: amazonOutbound('LISTING-1', 3), region: '美东' },
+      { row: outbound('LISTING-1-B', 2), region: '美东' },
+    ], metadata, new Map([['LISTING-1', 'MAT-1'], ['LISTING-1-B', 'MAT-1']]))
+
+    expect(combined).toHaveLength(1)
+    expect(combined[0]).toMatchObject({ sku: 'MAT-1', sourceCode: 'LISTING-1、LISTING-1-B', amazonQuantity: 3, merchantQuantity: 2, orderQuantity: 5 })
   })
 
   it('库存明细将美国在库与在途都按已确认仓库州区域汇总', () => {
@@ -92,7 +117,7 @@ describe('热力图SKU级明细聚合', () => {
       { row: east, region: '美东' },
       { row: outbound('SKU-2', 4), region: '加拿大' },
     ], metadata, listingMap)
-    expect(salesLocations.find((row) => row.state === 'CA')).toMatchObject({ region: '美西', productLine: '产品线甲', series: '系列甲', model: '型号甲', orderQuantity: 10 })
+    expect(salesLocations.find((row) => row.state === 'CA')).toMatchObject({ region: '美西', sku: 'MAT-1', sourceCode: 'listing-1', productLine: '产品线甲', series: '系列甲', model: '型号甲', orderQuantity: 10 })
     expect(salesLocations.find((row) => row.state === 'NY')).toMatchObject({ region: '美东', model: '型号乙', orderQuantity: 6 })
     expect(salesLocations.find((row) => row.region === '加拿大')).toMatchObject({ state: undefined, orderQuantity: 4 })
 

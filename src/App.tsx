@@ -24,7 +24,7 @@ const defaultAiSettings: AiSettings = {
   provider: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5-mini', secret: '', workerUrl: '', connectionStatus: '未测试',
 }
 
-const HEATMAP_SNAPSHOT_VERSION = 2
+const HEATMAP_SNAPSHOT_VERSION = 3
 
 type HeatmapSnapshot = {
   version?: number
@@ -307,6 +307,8 @@ export default function App() {
     const nextInventoryDetails = aggregateInventoryHeatmapDetails(inventory, productMetadata, usRegionByWarehouseCode)
     const nextSalesLocationDetails = aggregateSalesHeatmapLocationDetails(historyBuild.resolvedRows, productMetadata, listingMap)
     const nextInventoryLocationDetails = aggregateInventoryHeatmapLocationDetails(inventory, productMetadata, stateByWarehouseCode)
+    const unmatchedSalesQuantity = nextSalesDetails.filter((row) => !row.sku).reduce((sum, row) => sum + row.orderQuantity, 0)
+    if (unmatchedSalesQuantity > 0) warnings.push(`有 ${unmatchedSalesQuantity.toLocaleString('zh-CN')} 件销售记录未匹配到物料商品编码，明细中标记为“未匹配”`)
     const siteRegionOrder: SiteRegion[] = ['美国', '加拿大', '英国', '欧洲']
     const nextSiteInventory: SiteInventorySummary[] = inventory.length ? siteRegionOrder.map((region) => {
       const rows = inventory.filter((row) => row.siteRegion === region)

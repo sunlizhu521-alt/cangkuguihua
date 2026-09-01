@@ -144,11 +144,11 @@ describe('热力图快照', () => {
     await waitFor(() => expect(storageMock.getSetting).toHaveBeenCalledWith('热力图快照', null))
     await waitFor(() => expect(storageMock.db.settings.delete).toHaveBeenCalledWith('热力图快照'))
     fireEvent.click(screen.getByRole('button', { name: '销售热力图' }))
-    expect(screen.getByText('请运行分析生成SKU级明细')).toBeInTheDocument()
+    expect(screen.getByText('请运行分析生成商品编码级明细')).toBeInTheDocument()
   })
 
   it('页面加载时恢复快照，清空文件后同步删除且不残留旧数据', async () => {
-    storageMock.values.set('热力图快照', { version: 2, history, siteInventory, stateInventory: { CA: 13 }, salesDetails, inventoryDetails, savedAt: '2026-09-01T00:00:00.000Z' })
+    storageMock.values.set('热力图快照', { version: 3, history, siteInventory, stateInventory: { CA: 13 }, salesDetails, inventoryDetails, savedAt: '2026-09-01T00:00:00.000Z' })
     render(<App/>)
 
     await waitFor(() => expect(storageMock.getSetting).toHaveBeenCalledWith('热力图快照', null))
@@ -174,9 +174,9 @@ describe('热力图快照', () => {
     fireEvent.click(screen.getByRole('button', { name: '分析结果' }))
     fireEvent.click(screen.getByRole('button', { name: '重新测算' }))
 
-    await waitFor(() => expect(storageMock.setSetting).toHaveBeenCalledWith('热力图快照', expect.objectContaining({ version: 2, stateInventory: { CA: 7 }, savedAt: expect.any(String) })))
+    await waitFor(() => expect(storageMock.setSetting).toHaveBeenCalledWith('热力图快照', expect.objectContaining({ version: 3, stateInventory: { CA: 7 }, savedAt: expect.any(String) })))
     const saved = storageMock.values.get('热力图快照') as { version: number; history: HistoricalSummary; siteInventory: SiteInventorySummary[]; stateInventory: Record<string, number>; salesDetails: SalesHeatmapSkuDetail[]; inventoryDetails: InventoryHeatmapSkuDetail[]; salesLocationDetails: unknown[]; inventoryLocationDetails: unknown[]; savedAt: string }
-    expect(saved.version).toBe(2)
+    expect(saved.version).toBe(3)
     expect(saved.history.messages).toContain('亚马逊仓配与商家自发货历史出库数据未同时通过校验，不生成正式地区建议')
     expect(saved.siteInventory.find((row) => row.region === '美国')?.onHand).toBe(7)
     expect(saved.stateInventory).toEqual({ CA: 7 })
@@ -209,7 +209,7 @@ describe('热力图快照', () => {
     fireEvent.click(screen.getByRole('button', { name: '销售热力图' }))
     fireEvent.click(screen.getByRole('button', { name: '加载计算' }))
 
-    await waitFor(() => expect(storageMock.setSetting).toHaveBeenCalledWith('热力图快照', expect.objectContaining({ stateInventory: {}, inventoryDetails: [], salesDetails: [expect.objectContaining({ region: '美西', sku: '热力商品', productLine: '热力产品线', series: '热力系列', model: '热力型号', amazonQuantity: 5, merchantQuantity: 3, orderQuantity: 8 })], salesLocationDetails: [expect.objectContaining({ region: '美西', state: 'CA', sku: '热力商品', model: '热力型号', orderQuantity: 8 })] })))
+    await waitFor(() => expect(storageMock.setSetting).toHaveBeenCalledWith('热力图快照', expect.objectContaining({ stateInventory: {}, inventoryDetails: [], salesDetails: [expect.objectContaining({ region: '美西', sku: 'MAT-HEAT', sourceCode: '热力商品', productLine: '热力产品线', series: '热力系列', model: '热力型号', amazonQuantity: 5, merchantQuantity: 3, orderQuantity: 8 })], salesLocationDetails: [expect.objectContaining({ region: '美西', state: 'CA', sku: 'MAT-HEAT', sourceCode: '热力商品', model: '热力型号', orderQuantity: 8 })] })))
     expect(screen.getByText('热力商品')).toBeInTheDocument()
     expect(screen.getAllByText('热力产品线').length).toBeGreaterThan(0)
     expect(screen.getAllByText('热力系列').length).toBeGreaterThan(0)
