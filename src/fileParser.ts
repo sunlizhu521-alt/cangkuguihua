@@ -70,13 +70,13 @@ function pickHeaderRow(rows: unknown[][]): { headers: string[]; headerIndex: num
   return { headers: uniqueHeaders(rows[headerIndex], widestColumn + 1), headerIndex }
 }
 
-function workbookFromData(data: ArrayBuffer, fileName: string, sheetRows?: number) {
+function workbookFromData(data: ArrayBuffer, fileName: string, sheetRows?: number, dense = false) {
   const isCsv = fileName.toLowerCase().endsWith('.csv')
-  if (!isCsv) return XLSX.read(data, { type: 'array', cellDates: true, sheetRows })
+  if (!isCsv) return XLSX.read(data, { type: 'array', cellDates: true, sheetRows, dense })
   const bytes = new Uint8Array(data)
   const utf8 = new TextDecoder('utf-8').decode(bytes)
   const csvText = utf8.includes('\uFFFD') ? new TextDecoder('gb18030').decode(bytes) : utf8
-  return XLSX.read(csvText.replace(/^\uFEFF/, ''), { type: 'string', cellDates: true })
+  return XLSX.read(csvText.replace(/^\uFEFF/, ''), { type: 'string', cellDates: true, dense })
 }
 
 function sheetBounds(sheet: XLSX.WorkSheet, includeFullRange = false) {
@@ -201,7 +201,8 @@ export function parseForecast(file: StoredFile): ForecastRecord[] {
 }
 
 export function parseOutbound(file: StoredFile, channel: OutboundRecord['channel']): OutboundRecord[] {
-  const workbook = workbookFromData(file.data, file.fileName)
+  // 大型出库工作簿使用密集单元格数组，避免旧版 Chromium 在稀疏对象模式下耗尽内存后返回空数据。
+  const workbook = workbookFromData(file.data, file.fileName, undefined, true)
   const selectedSheet = file.sourceSheetName && workbook.Sheets[file.sourceSheetName]
     ? (() => {
         const sheet = workbook.Sheets[file.sourceSheetName!]
@@ -225,7 +226,12 @@ export function parseOutbound(file: StoredFile, channel: OutboundRecord['channel
     fulfillment: mappedColumn('履约方式'),
     country: mappedColumn('国家/地区'),
   }
-  const cellValue = (row: number, column: number | undefined) => column === undefined ? '' : sheet[XLSX.utils.encode_cell({ r: row, c: column })]?.v ?? ''
+  const denseSheet = sheet as unknown as Array<Array<XLSX.CellObject | undefined>>
+  const cellValue = (row: number, column: number | undefined) => {
+    if (column === undefined) return ''
+    const cell = Array.isArray(sheet) ? denseSheet[row]?.[column] : sheet[XLSX.utils.encode_cell({ r: row, c: column })]
+    return cell?.v ?? ''
+  }
   const records: OutboundRecord[] = []
   for (let row = headerIndex + 1; row <= bounds.e.r; row += 1) {
     const productCode = String(cellValue(row, columns.productCode)).trim()
