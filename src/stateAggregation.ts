@@ -13,23 +13,18 @@ function stateFromPostalCode(postalCode: string) {
 }
 
 export function resolveOutboundDemandRegion(row: OutboundRecord): DemandRegion | undefined {
-  const siteRegion = countryToSiteRegion(row.country ?? '')
-  if (siteRegion === '美国') {
-    const state = stateFromPostalCode(row.postalCode)
-    return state ? stateRegions[state] : undefined
-  }
-  if (siteRegion) return siteRegion
   const postalRegion = demandRegion(row.postalCode)
+  if (postalRegion === '美东' || postalRegion === '美西' || postalRegion === '美中') {
+    const state = stateFromPostalCode(row.postalCode)
+    return state ? stateRegions[state] : postalRegion
+  }
   if (postalRegion === '加拿大' || postalRegion === '英国') return postalRegion
-  const state = stateFromPostalCode(row.postalCode)
-  return state ? stateRegions[state] : undefined
+  return countryToSiteRegion(row.country ?? '') === '欧洲' ? '欧洲' : undefined
 }
 
 export function aggregateStateDemand(rows: OutboundRecord[]): Record<string, number> {
   const stateDemand: Record<string, number> = {}
   for (const row of rows) {
-    const siteRegion = countryToSiteRegion(row.country ?? '')
-    if (siteRegion && siteRegion !== '美国') continue
     const state = stateFromPostalCode(row.postalCode)
     if (!state) continue
     stateDemand[state] = (stateDemand[state] ?? 0) + row.quantity
