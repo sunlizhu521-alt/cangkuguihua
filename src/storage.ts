@@ -60,6 +60,7 @@ export async function setSetting<T>(key: string, value: T) {
 export const settingKeys = {
   analysis: '分析设置',
   ai: '人工智能设置',
+  heatmapSnapshot: '热力图快照',
 } as const
 
 export type StoredAiSettings = AiSettings

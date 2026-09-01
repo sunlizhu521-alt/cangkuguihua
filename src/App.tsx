@@ -22,6 +22,13 @@ const defaultAiSettings: AiSettings = {
   provider: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5-mini', secret: '', workerUrl: '', connectionStatus: '未测试',
 }
 
+type HeatmapSnapshot = {
+  history: HistoricalSummary
+  siteInventory: SiteInventorySummary[]
+  stateInventory: Record<string, number>
+  savedAt: string
+}
+
 let initializationPromise: Promise<void> | undefined
 
 function initializeDatabase() {
@@ -58,6 +65,12 @@ export default function App() {
     setAddresses(nextAddresses)
     setManualQuotes(nextManual)
     setResults(savedResults?.rows ?? [])
+    const snapshot = await getSetting<HeatmapSnapshot | null>(settingKeys.heatmapSnapshot, null)
+    if (snapshot) {
+      setHistory(snapshot.history)
+      setSiteInventory(snapshot.siteInventory)
+      setStateInventory(snapshot.stateInventory)
+    }
   }
 
   useEffect(() => {
@@ -212,14 +225,16 @@ export default function App() {
         if (region) nextRegionInventory[region] += row.quantity
       }
       setRegionInventory(nextRegionInventory)
-      setStateInventory(aggregateStateInventory(inventory, addresses))
+      const nextStateInventory = aggregateStateInventory(inventory, addresses)
+      setStateInventory(nextStateInventory)
+      await setSetting(settingKeys.heatmapSnapshot, { history: historic, siteInventory: nextSiteInventory, stateInventory: nextStateInventory, savedAt: new Date().toISOString() })
       setResults(rows)
       setPage('results'); notify(`测算完成，共生成 ${rows.length} 条结果`)
     } catch (error) { notify(error instanceof Error ? error.message : '测算失败', 'danger') }
     finally { setRunning(false) }
   }
 
-  const pageContent = page === 'files' ? <FileLibraryPage files={files} uploading={uploading} onUpload={handleUpload} onMap={(file) => { setSelectedFile(file); setPage('mapping') }} onClear={async () => { await db.transaction('rw', [db.files, db.results, db.manualTransferQuotes], async () => { await db.files.clear(); await db.results.clear(); await db.manualTransferQuotes.clear() }); await refreshData(); setSelectedFile(undefined); notify('本次分析文件、结果和自行询价已清空') }}/>
+  const pageContent = page === 'files' ? <FileLibraryPage files={files} uploading={uploading} onUpload={handleUpload} onMap={(file) => { setSelectedFile(file); setPage('mapping') }} onClear={async () => { await db.transaction('rw', [db.files, db.results, db.manualTransferQuotes], async () => { await db.files.clear(); await db.results.clear(); await db.manualTransferQuotes.clear() }); await db.settings.delete(settingKeys.heatmapSnapshot); setHistory(emptyHistoricalSummary()); setSiteInventory([]); setStateInventory({}); await refreshData(); setSelectedFile(undefined); notify('本次分析文件、结果和自行询价已清空') }}/>
     : page === 'mapping' ? <MappingPage files={files} selected={selectedFile ?? files[0]} uploading={uploading} onSelect={setSelectedFile} onUpload={handleUpload} onSave={saveMapping}/>
     : page === 'quotes' ? <QuotePage quotes={quotes} aiSettings={aiSettings} busySlot={busySlot} onUpload={uploadQuote} onApply={applyQuote} onSaveAi={saveAiSettings} onTestAi={testAi}/>
     : page === 'settings' ? <SettingsPage settings={analysisSettings} addresses={addresses} onSaveSettings={saveAnalysisSettings} onSaveAddress={saveAddress} onDeleteAddress={async (id) => { if (id) await db.warehouseAddresses.delete(id); await refreshData() }}/>
