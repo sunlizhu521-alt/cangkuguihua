@@ -54,7 +54,7 @@ export default function UsStatesMap({ stateValues, warehouses = [], valueLabel =
   }, [])
 
   return <div style={{ position: 'relative' }}>
-    <svg ref={svgRef} viewBox={USA.viewBox} role="img" aria-label="美国各州订单分布图" style={{ width: '100%', height: 'auto' }}>
+    <svg ref={svgRef} viewBox={USA.viewBox} role="img" aria-label={`美国各州${valueLabel}分布图`} style={{ width: '100%', height: 'auto' }}>
       {USA.locations.map((loc: UsaLocation) => {
         const abbr = loc.id.toUpperCase()
         const value = stateValues[abbr] ?? 0

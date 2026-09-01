@@ -15,7 +15,7 @@ describe('美国各州地图', () => {
     })
     const { container } = render(<UsStatesMap stateValues={{ CA: 100, TX: 50 }} warehouses={[{ code: 'WH-CA', state: 'CA' }, { code: 'WH-PR', state: 'PR' }]} />)
 
-    expect(screen.getByRole('img', { name: '美国各州订单分布图' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '美国各州订单量分布图' })).toBeInTheDocument()
     expect(container.querySelectorAll('path[data-state]')).toHaveLength(51)
     await waitFor(() => expect(screen.getByText('WH-CA').parentElement).toHaveAttribute('transform', 'translate(60 50)'))
     expect(screen.queryByText('WH-PR')).not.toBeInTheDocument()

@@ -12,6 +12,7 @@ import { defaultAddresses, defaultAnalysisSettings, defaultQuoteSlots, stateRegi
 import { db, getSetting, saveFile, saveQuote, settingKeys, setSetting, updateFileMapping } from './storage'
 import { countryToSiteRegion, demandRegion, demandSiteRegion, inspectWorkbook, localQuoteDraft, parseForecast, parseInventory, parseOutbound, parsePackaging, parseWarehouses, postalRegion, readMappedRows } from './fileParser'
 import { optimizeTransfers } from './analysis'
+import { aggregateStateDemand, aggregateStateInventory } from './stateAggregation'
 import { parseQuoteWithAi, testAiConnection } from './ai'
 import { exportAnalysisWorkbook } from './exportExcel'
 import type { AiSettings, AnalysisResult, AnalysisSettings, DemandRegion, FileSlotDefinition, ManualTransferQuote, OutboundRecord, PageId, QuoteVersion, SiteInventorySummary, SiteRegion, StoredFile, WarehouseAddress } from './types'
@@ -48,6 +49,7 @@ export default function App() {
   const [history, setHistory] = useState<HistoricalSummary>(() => emptyHistoricalSummary())
   const [siteInventory, setSiteInventory] = useState<SiteInventorySummary[]>([])
   const [regionInventory, setRegionInventory] = useState<Record<DemandRegion, number>>({ 美西: 0, 美中: 0, 美东: 0, 加拿大: 0, 英国: 0, 欧洲: 0 })
+  const [stateInventory, setStateInventory] = useState<Record<string, number>>({})
 
   const refreshData = async () => {
     const [nextFiles, nextQuotes, nextAddresses, nextManual, savedResults] = await Promise.all([db.files.toArray(), db.quotes.orderBy('slot').toArray(), db.warehouseAddresses.toArray(), db.manualTransferQuotes.toArray(), db.results.orderBy('createdAt').last()])
@@ -210,6 +212,7 @@ export default function App() {
         if (region) nextRegionInventory[region] += row.quantity
       }
       setRegionInventory(nextRegionInventory)
+      setStateInventory(aggregateStateInventory(inventory, addresses))
       setResults(rows)
       setPage('results'); notify(`测算完成，共生成 ${rows.length} 条结果`)
     } catch (error) { notify(error instanceof Error ? error.message : '测算失败', 'danger') }
@@ -220,8 +223,8 @@ export default function App() {
     : page === 'mapping' ? <MappingPage files={files} selected={selectedFile ?? files[0]} uploading={uploading} onSelect={setSelectedFile} onUpload={handleUpload} onSave={saveMapping}/>
     : page === 'quotes' ? <QuotePage quotes={quotes} aiSettings={aiSettings} busySlot={busySlot} onUpload={uploadQuote} onApply={applyQuote} onSaveAi={saveAiSettings} onTestAi={testAi}/>
     : page === 'settings' ? <SettingsPage settings={analysisSettings} addresses={addresses} onSaveSettings={saveAnalysisSettings} onSaveAddress={saveAddress} onDeleteAddress={async (id) => { if (id) await db.warehouseAddresses.delete(id); await refreshData() }}/>
-    : page === 'salesHeatmap' ? <SalesHeatmapPage history={history}/>
-    : page === 'inventoryHeatmap' ? <InventoryHeatmapPage regionInventory={regionInventory}/>
+    : page === 'salesHeatmap' ? <SalesHeatmapPage history={history} addresses={addresses}/>
+    : page === 'inventoryHeatmap' ? <InventoryHeatmapPage regionInventory={regionInventory} stateInventory={stateInventory} addresses={addresses}/>
     : page === 'inventoryAnalysis' ? <InventoryAnalysisPage/>
     : <ResultsPage results={results} addresses={addresses} manualQuotes={manualQuotes} history={history} siteInventory={siteInventory} running={running} onRun={runAnalysis} onAddManualQuote={async (quote) => { await db.manualTransferQuotes.add(quote); await refreshData(); notify('自行寻找的中转报价已保存，正在重新测算'); await runAnalysis() }} onDeleteManualQuote={async (id) => { if (id) await db.manualTransferQuotes.delete(id); await refreshData(); notify('自行询价已删除') }} onExport={() => exportAnalysisWorkbook(results, analysisSettings, files, quotes, manualQuotes)}/>
 
@@ -231,12 +234,13 @@ export default function App() {
 function buildHistory(files: StoredFile[]): HistoricalSummary {
   const amazonFile = files.find((file) => file.slotId === 'amazonOutbound' && file.validation === '校验通过')
   const merchantFile = files.find((file) => file.slotId === 'merchantOutbound' && file.validation === '校验通过')
-  if (!amazonFile || !merchantFile) return { channelAmazonShare: 0, channelMerchantShare: 0, postcodeCoverage: 0, regionDemand: { 美西: 0, 美中: 0, 美东: 0, 英国: 0, 加拿大: 0, 欧洲: 0 }, siteDailyDemand: { 美国: 0, 加拿大: 0, 英国: 0, 欧洲: 0 }, messages: ['亚马逊仓配与商家自发货历史出库数据未同时通过校验，不生成正式地区建议'] }
+  if (!amazonFile || !merchantFile) return { channelAmazonShare: 0, channelMerchantShare: 0, postcodeCoverage: 0, regionDemand: { 美西: 0, 美中: 0, 美东: 0, 英国: 0, 加拿大: 0, 欧洲: 0 }, stateDemand: {}, siteDailyDemand: { 美国: 0, 加拿大: 0, 英国: 0, 欧洲: 0 }, messages: ['亚马逊仓配与商家自发货历史出库数据未同时通过校验，不生成正式地区建议'] }
   const amazon = parseOutbound(amazonFile, '亚马逊仓配'), merchant = parseOutbound(merchantFile, '商家自发货')
   const datesA = amazon.map((row) => row.date).filter(Boolean).sort(), datesM = merchant.map((row) => row.date).filter(Boolean).sort()
   const start = [datesA[0], datesM[0]].filter(Boolean).sort().at(-1), end = [datesA.at(-1), datesM.at(-1)].filter(Boolean).sort()[0]
-  if (!start || !end || start > end) return { channelAmazonShare: 0, channelMerchantShare: 0, postcodeCoverage: 0, regionDemand: { 美西: 0, 美中: 0, 美东: 0, 英国: 0, 加拿大: 0, 欧洲: 0 }, siteDailyDemand: { 美国: 0, 加拿大: 0, 英国: 0, 欧洲: 0 }, messages: ['两类历史出库没有共同覆盖日期区间，不生成正式地区建议'] }
+  if (!start || !end || start > end) return { channelAmazonShare: 0, channelMerchantShare: 0, postcodeCoverage: 0, regionDemand: { 美西: 0, 美中: 0, 美东: 0, 英国: 0, 加拿大: 0, 欧洲: 0 }, stateDemand: {}, siteDailyDemand: { 美国: 0, 加拿大: 0, 英国: 0, 欧洲: 0 }, messages: ['两类历史出库没有共同覆盖日期区间，不生成正式地区建议'] }
   const a = amazon.filter((row) => row.date >= start && row.date <= end), m = merchant.filter((row) => row.date >= start && row.date <= end), all = [...a, ...m]
+  const stateDemand = aggregateStateDemand(all)
   const amountA = a.reduce((sum, row) => sum + row.quantity, 0), amountM = m.reduce((sum, row) => sum + row.quantity, 0), total = amountA + amountM
   const resolveRegion = (row: OutboundRecord): DemandRegion | undefined => {
     const site = countryToSiteRegion(row.country ?? '')
@@ -256,9 +260,9 @@ function buildHistory(files: StoredFile[]): HistoricalSummary {
   all.forEach((row) => { const region = countryToSiteRegion(row.country ?? '') ?? demandSiteRegion(row.postalCode); if (region) siteAmount[region] += row.quantity })
   const siteDailyDemand: Record<SiteRegion, number> = { 美国: 0, 加拿大: 0, 英国: 0, 欧洲: 0 }
   ;(Object.keys(siteDailyDemand) as SiteRegion[]).forEach((region) => { siteDailyDemand[region] = totalDays > 0 ? siteAmount[region] / totalDays : 0 })
-  return { channelAmazonShare: total ? amountA / total : 0, channelMerchantShare: total ? amountM / total : 0, postcodeCoverage: total ? validAmount / total : 0, regionDemand: regions, siteDailyDemand, commonDateRange: `${start} 至 ${end}`, messages }
+  return { channelAmazonShare: total ? amountA / total : 0, channelMerchantShare: total ? amountM / total : 0, postcodeCoverage: total ? validAmount / total : 0, regionDemand: regions, stateDemand, siteDailyDemand, commonDateRange: `${start} 至 ${end}`, messages }
 }
 
 function emptyHistoricalSummary(): HistoricalSummary {
-  return { channelAmazonShare: 0, channelMerchantShare: 0, postcodeCoverage: 0, regionDemand: { 美西: 0, 美中: 0, 美东: 0, 英国: 0, 加拿大: 0, 欧洲: 0 }, siteDailyDemand: { 美国: 0, 加拿大: 0, 英国: 0, 欧洲: 0 }, messages: ['请完成历史出库数据映射并运行分析'] }
+  return { channelAmazonShare: 0, channelMerchantShare: 0, postcodeCoverage: 0, regionDemand: { 美西: 0, 美中: 0, 美东: 0, 英国: 0, 加拿大: 0, 欧洲: 0 }, stateDemand: {}, siteDailyDemand: { 美国: 0, 加拿大: 0, 英国: 0, 欧洲: 0 }, messages: ['请完成历史出库数据映射并运行分析'] }
 }

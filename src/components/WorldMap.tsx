@@ -8,15 +8,13 @@ export interface WorldMapPoint {
 }
 
 const CANADA = 'M80 50 L130 22 L200 16 L280 20 L360 16 L430 28 L430 50 L80 50 Z'
-const USA = 'M54 91l35-19 49 7 41-20 57 23 46-8 48 19 45-2 41 22 46-11 47 23 30 39-12 38-37 7-31 39-38 18-46-4-46 28-39-17-61 12-48-28-27-51-42-25z'
 const UK = 'M92 40 L116 34 L138 46 L146 74 L134 108 L110 128 L86 118 L72 92 L78 58 Z'
 const EUROPE = 'M246 44 L300 40 L334 52 L356 74 L344 98 L366 116 L352 144 L374 168 L358 196 L370 220 L344 244 L320 264 L292 272 L268 262 L252 236 L240 206 L234 170 L228 132 L234 94 L240 66 Z'
 
 export default function WorldMap({ points }: { points: WorldMapPoint[] }) {
-  return <svg viewBox="0 0 920 360" role="img" aria-label="简化世界地图" style={{ width: '100%', height: 'auto' }}>
+  return <svg viewBox="0 0 920 360" role="img" aria-label="加拿大、英国和欧洲需求分布图" style={{ width: '100%', height: 'auto' }}>
     <rect x="0" y="0" width="920" height="360" fill="#eef6f6" rx="10"/>
     <path d={CANADA} fill="#d8f4ef" stroke="#66918e" strokeWidth="2"/>
-    <path d={USA} fill="#c9ebe7" stroke="#66918e" strokeWidth="2"/>
     <g transform="translate(460 0)">
       <path d={UK} fill="#d8f4ef" stroke="#66918e" strokeWidth="2"/>
       <path d={EUROPE} fill="#b6dedb" stroke="#66918e" strokeWidth="2"/>

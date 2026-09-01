@@ -1,18 +1,34 @@
-import WorldMap, { type WorldMapPoint } from '../components/WorldMap'
 import { PageHeader } from '../components/Common'
-import type { DemandRegion } from '../types'
+import UsStatesMap from '../components/UsStatesMap'
+import WorldMap, { type WorldMapPoint } from '../components/WorldMap'
+import { stateRegions } from '../data'
+import type { DemandRegion, WarehouseAddress, WarehouseRegion } from '../types'
 
-export default function InventoryHeatmapPage({ regionInventory }: { regionInventory: Record<DemandRegion, number> }) {
-  const max = Math.max(1, ...Object.values(regionInventory))
-  const make = (key: DemandRegion, label: string, x: number, y: number): WorldMapPoint => ({ key, label, x, y, value: (regionInventory[key] ?? 0) / max, display: `${(regionInventory[key] ?? 0).toLocaleString('zh-CN')} 件` })
-  const points = [make('美西', '美西', 135, 174), make('美中', '美中', 323, 186), make('美东', '美东', 492, 157), make('加拿大', '加拿大', 255, 42), make('英国', '英国', 570, 84), make('欧洲', '欧洲', 790, 176)]
+export default function InventoryHeatmapPage({ regionInventory, stateInventory, addresses }: { regionInventory: Record<DemandRegion, number>; stateInventory: Record<string, number>; addresses: WarehouseAddress[] }) {
+  const internationalRegions = ['加拿大', '英国', '欧洲'] as const
+  const internationalMax = Math.max(1, ...internationalRegions.map((region) => regionInventory[region] ?? 0))
+  const make = (key: typeof internationalRegions[number], label: string, x: number, y: number): WorldMapPoint => ({ key, label, x, y, value: (regionInventory[key] ?? 0) / internationalMax, display: `${(regionInventory[key] ?? 0).toLocaleString('zh-CN')} 件` })
+  const internationalPoints = [make('加拿大', '加拿大', 255, 42), make('英国', '英国', 570, 84), make('欧洲', '欧洲', 790, 176)]
+  const usRegionInventory: Record<WarehouseRegion, number> = { 美西: 0, 美中: 0, 美东: 0 }
+  Object.entries(stateInventory).forEach(([state, quantity]) => {
+    const region = stateRegions[state]
+    if (region) usRegionInventory[region] += quantity
+  })
+  const warehouses = addresses.filter((row) => row.confirmed).map((row) => ({ code: row.code, state: row.state }))
   return <div className="page">
-    <PageHeader title="库存热力图" description="各区域在库成品件数，美国按仓库地址配置细分到美西/美中/美东" />
+    <PageHeader title="库存热力图" description="美国按仓库地址配置汇总到州，海外库存继续按区域展示" />
     <section className="section map-section">
-      <div className="section-heading"><div><h2>全球库存分布</h2><p>热力圈大小表示在库量相对高低，不等同于需求。</p></div></div>
+      <div className="section-heading"><div><h2>美国州级库存分布</h2><p>仅统计配置了有效美国州的在库成品；悬停查看州库存量和占全美库存比例。</p></div></div>
       <div className="map-layout">
-        <div className="us-map"><WorldMap points={points}/></div>
-        <div className="map-side">{points.map((point) => <div className="region-stat" key={point.key}><span className="region-dot"/><div><strong>{point.label}</strong><small>在库量</small></div><div className="region-values"><b>{point.display}</b><small>成品</small></div></div>)}</div>
+        <div className="us-map"><UsStatesMap stateValues={stateInventory} warehouses={warehouses} valueLabel="在库量"/></div>
+        <div className="map-side">{(['美西', '美中', '美东'] as WarehouseRegion[]).map((region) => <div className="region-stat" key={region}><span className={`region-dot ${region}`}/><div><strong>{region}</strong><small>在库量</small></div><div className="region-values"><b>{usRegionInventory[region].toLocaleString('zh-CN')} 件</b><small>成品</small></div></div>)}</div>
+      </div>
+    </section>
+    <section className="section map-section">
+      <div className="section-heading"><div><h2>加拿大、英国和欧洲库存分布</h2><p>海外仓库不进入美国州级热力及全美库存占比。</p></div></div>
+      <div className="map-layout">
+        <div className="us-map"><WorldMap points={internationalPoints}/></div>
+        <div className="map-side">{internationalPoints.map((point) => <div className="region-stat" key={point.key}><span className="region-dot"/><div><strong>{point.label}</strong><small>在库量</small></div><div className="region-values"><b>{point.display}</b><small>成品</small></div></div>)}</div>
       </div>
     </section>
   </div>
