@@ -22,6 +22,12 @@ const projection = d3.geoMercator().fitExtent(
 const path = d3.geoPath(projection)
 const result = selected.map((f) => ({ id: f.properties.name, name: nameMap[f.properties.name], path: path(f) }))
 
-const content = `export interface EuropeCountry {\n  id: string\n  name: string\n  path: string\n}\n\nexport const europeCountries: EuropeCountry[] = ${JSON.stringify(result)}\n`
+const canada = features.find((feature) => feature.properties.name === 'Canada')
+if (!canada) throw new Error('world-atlas 中未找到加拿大轮廓')
+const canadaProjection = d3.geoMercator().fitExtent([[10, 10], [430, 330]], canada)
+const canadaPath = d3.geoPath(canadaProjection)(canada)
+if (!canadaPath) throw new Error('加拿大轮廓生成失败')
+
+const content = `export interface EuropeCountry {\n  id: string\n  name: string\n  path: string\n}\n\nexport const canadaCountry: EuropeCountry = ${JSON.stringify({ id: 'Canada', name: '加拿大', path: canadaPath })}\n\nexport const europeCountries: EuropeCountry[] = ${JSON.stringify(result)}\n`
 fs.writeFileSync('src/data/europeCountries.ts', content)
-console.log('生成国家数:', result.length, '总字符:', result.reduce((s, r) => s + r.path.length, 0))
+console.log('生成欧洲国家数:', result.length, '加拿大轮廓字符:', canadaPath.length, '欧洲轮廓总字符:', result.reduce((s, r) => s + r.path.length, 0))

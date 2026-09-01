@@ -1,9 +1,9 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import InventoryHeatmapPage from '../pages/InventoryHeatmapPage'
 import ResultsPage, { type HistoricalSummary } from '../pages/ResultsPage'
 import SalesHeatmapPage from '../pages/SalesHeatmapPage'
-import type { WarehouseAddress } from '../types'
+import type { SiteInventorySummary, WarehouseAddress } from '../types'
 
 const history: HistoricalSummary = {
   channelAmazonShare: 0.5,
@@ -19,6 +19,13 @@ const history: HistoricalSummary = {
 const addresses: WarehouseAddress[] = [
   { code: 'CA-WH', name: '加州仓', state: 'CA', city: '', address: '', postalCode: '', suggestedRegion: '美西', confirmedRegion: '美西', confirmed: true },
   { code: 'CA-CANADA', name: '加拿大仓', state: 'ON', city: '', address: '', postalCode: '', suggestedRegion: '美东', confirmedRegion: '美东', confirmed: true },
+]
+
+const siteInventory: SiteInventorySummary[] = [
+  { region: '美国', onHand: 20, inTransit: 6, dailyDemand: 1, safetyStock: 45, coverageDays: 26, status: '预警' },
+  { region: '加拿大', onHand: 9, inTransit: 4, dailyDemand: 0, safetyStock: 0, coverageDays: Number.POSITIVE_INFINITY, status: '安全' },
+  { region: '英国', onHand: 3, inTransit: 1, dailyDemand: 0, safetyStock: 0, coverageDays: Number.POSITIVE_INFINITY, status: '安全' },
+  { region: '欧洲', onHand: 2, inTransit: 1, dailyDemand: 0, safetyStock: 0, coverageDays: Number.POSITIVE_INFINITY, status: '安全' },
 ]
 
 beforeEach(() => {
@@ -39,16 +46,27 @@ describe('州级真实轮廓热力图页面接入', () => {
 
     expect(screen.getByRole('img', { name: '美国各州订单量分布图' })).toBeInTheDocument()
     const internationalMap = screen.getByRole('img', { name: '加拿大、英国和欧洲需求分布图' })
-    expect(internationalMap.querySelectorAll('path')).toHaveLength(3)
+    expect(internationalMap.querySelectorAll('path')).toHaveLength(29)
+    expect(internationalMap.querySelector('path[data-country="加拿大"]')).toBeInTheDocument()
+    expect(internationalMap.querySelector('path[data-country="英国"]')).toBeInTheDocument()
+    expect(internationalMap.querySelector('path[data-country="德国"]')).toBeInTheDocument()
     await waitFor(() => expect(screen.getByText('CA-WH')).toBeInTheDocument())
     expect(screen.queryByText('CA-CANADA')).not.toBeInTheDocument()
   })
 
-  it('库存热力图只把美国州库存传入州地图', async () => {
-    render(<InventoryHeatmapPage regionInventory={{ 美西: 20, 美中: 0, 美东: 0, 加拿大: 9, 英国: 4, 欧洲: 3 }} stateInventory={{ CA: 20 }} addresses={addresses}/>)
+  it('库存热力图只把美国州库存传入州地图，海外按在库加在途展示真实轮廓', async () => {
+    render(<InventoryHeatmapPage siteInventory={siteInventory} stateInventory={{ CA: 20 }} addresses={addresses}/>)
 
     expect(screen.getByRole('img', { name: '美国各州在库量分布图' })).toBeInTheDocument()
-    expect(screen.getByText('20 件')).toBeInTheDocument()
+    const internationalMap = screen.getByRole('img', { name: '加拿大、英国和欧洲库存分布图' })
+    expect(internationalMap.querySelectorAll('path')).toHaveLength(29)
+    expect(screen.getAllByText('13 件')).not.toHaveLength(0)
+    const germany = internationalMap.querySelector('path[data-country="德国"]')
+    expect(germany).toBeInTheDocument()
+    fireEvent.mouseEnter(germany!, { clientX: 100, clientY: 100 })
+    expect(screen.getByText('区域：欧洲')).toBeInTheDocument()
+    expect(screen.getByText('库存量（在库+在途）：3 件')).toBeInTheDocument()
+    expect(screen.getByText('占比：15.0%')).toBeInTheDocument()
     await waitFor(() => expect(screen.getByText('CA-WH')).toBeInTheDocument())
     expect(screen.queryByText('CA-CANADA')).not.toBeInTheDocument()
   })
