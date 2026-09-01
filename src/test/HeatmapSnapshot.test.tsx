@@ -77,7 +77,7 @@ vi.mock('../analysis', () => ({ optimizeTransfers: vi.fn(() => []) }))
 
 vi.mock('../stateAggregation', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../stateAggregation')>()
-  return { ...actual, aggregateStateInventory: vi.fn(() => ({ CA: 7 })) }
+  return { ...actual, aggregateStateInventory: vi.fn((inventory: unknown[]) => inventory.length ? { CA: 7 } : {}) }
 })
 
 vi.mock('../fileParser', async (importOriginal) => {
@@ -86,6 +86,7 @@ vi.mock('../fileParser', async (importOriginal) => {
     ...actual,
     parseInventory: vi.fn(() => [{ warehouseCode: 'CA-WH', warehouseName: '加州仓', productCode: '商品一', series: '商品一', quantity: 7, inventoryStatus: '在库', productType: '成品' }]),
     parseForecast: vi.fn(() => [{ series: '商品一', quantity: 7, periodDays: 45 }]),
+    parseOutbound: vi.fn((_file, channel: '亚马逊仓配' | '商家自发货') => [{ productCode: '热力商品', series: '热力商品', date: '2026-08-01', postalCode: '90001', quantity: channel === '亚马逊仓配' ? 5 : 3, status: '', channel }]),
     parseWarehouses: vi.fn(() => [{ code: 'CA-WH', name: '加州仓', region: '美西', site: '美国', siteRegion: '美国' }]),
   }
 })
@@ -176,5 +177,32 @@ describe('热力图快照', () => {
     expect(saved.salesDetails).toEqual([])
     expect(saved.inventoryDetails[0]).toMatchObject({ region: '美西', sku: '商品一', onHand: 7, inTransit: 0, total: 7 })
     expect(Number.isNaN(Date.parse(saved.savedAt))).toBe(false)
+  })
+
+  it('热力图页面不依赖销售预测即可重新计算库存并保存快照', async () => {
+    storageMock.setFiles([storedFile('inventory'), storedFile('warehouse')])
+    render(<App/>)
+
+    await waitFor(() => expect(screen.getByText('inventory.xlsx')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: '库存热力图' }))
+    fireEvent.click(screen.getByRole('button', { name: '加载计算' }))
+
+    await waitFor(() => expect(storageMock.setSetting).toHaveBeenCalledWith('热力图快照', expect.objectContaining({ stateInventory: { CA: 7 }, inventoryDetails: [expect.objectContaining({ region: '美西', sku: '商品一', total: 7 })] })))
+    expect(screen.getByText('商品一')).toBeInTheDocument()
+    expect(screen.getByText(/热力图数据已加载/)).toBeInTheDocument()
+    expect(screen.getByText(/缺少亚马逊仓配出库数据、商家自发货出库数据，销售热力图为空/)).toBeInTheDocument()
+  })
+
+  it('缺少库存和仓库文件时仍保留可计算的销售热力图', async () => {
+    storageMock.setFiles([storedFile('amazonOutbound'), storedFile('merchantOutbound')])
+    render(<App/>)
+
+    await waitFor(() => expect(screen.getByText('amazonOutbound.xlsx')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: '销售热力图' }))
+    fireEvent.click(screen.getByRole('button', { name: '加载计算' }))
+
+    await waitFor(() => expect(storageMock.setSetting).toHaveBeenCalledWith('热力图快照', expect.objectContaining({ stateInventory: {}, inventoryDetails: [], salesDetails: [expect.objectContaining({ region: '美西', sku: '热力商品', orderQuantity: 8 })] })))
+    expect(screen.getByText('热力商品')).toBeInTheDocument()
+    expect(screen.getByText(/缺少库存数据、仓库维度文件，库存热力图为空/)).toBeInTheDocument()
   })
 })

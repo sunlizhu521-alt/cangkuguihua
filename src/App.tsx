@@ -16,7 +16,7 @@ import { aggregateInventoryHeatmapDetails, aggregateSalesHeatmapDetails, buildPr
 import { aggregateStateDemand, aggregateStateInventory, resolveOutboundDemandRegion } from './stateAggregation'
 import { parseQuoteWithAi, testAiConnection } from './ai'
 import { exportAnalysisWorkbook } from './exportExcel'
-import type { AiSettings, AnalysisResult, AnalysisSettings, DemandRegion, FileSlotDefinition, InventoryHeatmapSkuDetail, ManualTransferQuote, PageId, QuoteVersion, SalesHeatmapSkuDetail, SiteInventorySummary, SiteRegion, StoredFile, WarehouseAddress, WarehouseRegion } from './types'
+import type { AiSettings, AnalysisResult, AnalysisSettings, DemandRegion, FileSlotDefinition, InventoryHeatmapSkuDetail, InventoryRecord, ManualTransferQuote, PageId, QuoteVersion, SalesHeatmapSkuDetail, SiteInventorySummary, SiteRegion, StoredFile, WarehouseAddress, WarehouseRecord, WarehouseRegion } from './types'
 import './styles.css'
 
 const defaultAiSettings: AiSettings = {
@@ -37,6 +37,13 @@ type HistoryBuildResult = {
   resolvedRows: ResolvedOutboundRecord[]
 }
 
+type HeatmapComputeResult = {
+  history: HistoricalSummary
+  inventory: InventoryRecord[]
+  warehouses: WarehouseRecord[]
+  warnings: string[]
+}
+
 let initializationPromise: Promise<void> | undefined
 
 function initializeDatabase() {
@@ -53,6 +60,7 @@ export default function App() {
   const [uploading, setUploading] = useState<string>()
   const [busySlot, setBusySlot] = useState<number>()
   const [running, setRunning] = useState(false)
+  const [heatmapLoading, setHeatmapLoading] = useState(false)
   const [message, setMessage] = useState<{ tone: 'success' | 'danger' | 'info'; text: string }>()
   const [analysisSettings, setAnalysisSettingsState] = useState<AnalysisSettings>(defaultAnalysisSettings)
   const [aiSettings, setAiSettingsState] = useState<AiSettings>(defaultAiSettings)
@@ -176,6 +184,120 @@ export default function App() {
     notify(`仓库区域已确认：${next.confirmedRegion}`)
   }
 
+  const computeHeatmapData = async (sourceFiles: StoredFile[], sourceAddresses: WarehouseAddress[], settings: AnalysisSettings): Promise<HeatmapComputeResult> => {
+    const valid = (slotId: StoredFile['slotId']) => sourceFiles.find((file) => file.slotId === slotId && file.validation === '校验通过')
+    const warnings: string[] = []
+    const amazonFile = valid('amazonOutbound')
+    const merchantFile = valid('merchantOutbound')
+    let historyBuild: HistoryBuildResult
+    if (!amazonFile || !merchantFile) {
+      const missing = [!amazonFile ? '亚马逊仓配出库数据' : '', !merchantFile ? '商家自发货出库数据' : ''].filter(Boolean).join('、')
+      warnings.push(`缺少${missing}，销售热力图为空`)
+    }
+    try {
+      historyBuild = buildHistory(sourceFiles)
+    } catch (error) {
+      const text = error instanceof Error ? error.message : '未知原因'
+      warnings.push(`历史出库数据解析失败，销售热力图为空：${text}`)
+      historyBuild = { summary: { ...emptyHistoricalSummary(), messages: [`历史出库数据解析失败：${text}`] }, resolvedRows: [] }
+    }
+    const historic = historyBuild.summary
+
+    let productRows: Record<string, unknown>[] = []
+    const productFile = valid('product')
+    if (!productFile) warnings.push('缺少商品维度文件，销售产品线和销售系列留空')
+    else {
+      try { productRows = readMappedRows(productFile) }
+      catch (error) { warnings.push(`商品维度解析失败，销售产品线和销售系列留空：${error instanceof Error ? error.message : '未知原因'}`) }
+    }
+    const productMetadata = buildProductMetadata(productRows)
+    const seriesByProduct = new Map(productRows.flatMap((row) => {
+      const series = String(row['销售系列'] ?? '').trim()
+      if (!series) return []
+      const keys = new Set([String(row['商品编码'] ?? '').trim(), String(row['SKU'] ?? '').trim()])
+      keys.delete('')
+      return [...keys].map((key) => [key, series] as const)
+    }))
+
+    let inventory: InventoryRecord[] = []
+    let warehouses: WarehouseRecord[] = []
+    const inventoryFile = valid('inventory')
+    const warehouseFile = valid('warehouse')
+    if (!inventoryFile || !warehouseFile) {
+      const missing = [!inventoryFile ? '库存数据' : '', !warehouseFile ? '仓库维度文件' : ''].filter(Boolean).join('、')
+      warnings.push(`缺少${missing}，库存热力图为空`)
+    } else {
+      try {
+        const addressRegion = new Map(sourceAddresses.filter((row) => row.confirmed).map((row) => [row.code, row.confirmedRegion!]))
+        warehouses = parseWarehouses(warehouseFile).map((row) => ({ ...row, region: addressRegion.get(row.code) ?? row.region }))
+        const warehouseCodeByName = new Map(warehouses.map((row) => [row.name, row.code]))
+        const warehouseSiteRegionByName = new Map(warehouses.map((row) => [row.name, row.siteRegion]).filter((pair): pair is [string, SiteRegion] => Boolean(pair[1])))
+        const warehouseRegionByName = new Map(warehouses.map((row) => [row.name, row.region]))
+        inventory = parseInventory(inventoryFile).map((row) => ({
+          ...row,
+          warehouseCode: warehouseCodeByName.get(row.warehouseName) ?? row.warehouseName,
+          series: seriesByProduct.get(row.productCode) || row.productCode,
+          siteRegion: warehouseSiteRegionByName.get(row.warehouseName),
+          region: warehouseRegionByName.get(row.warehouseName),
+        }))
+      } catch (error) {
+        warnings.push(`库存数据或仓库维度解析失败，库存热力图为空：${error instanceof Error ? error.message : '未知原因'}`)
+        inventory = []
+        warehouses = []
+      }
+    }
+
+    const usRegionByWarehouseCode = new Map(sourceAddresses.flatMap((address) => {
+      const region = address.confirmed ? stateRegions[address.state.trim().toUpperCase()] : undefined
+      return region ? [[address.code.trim().toUpperCase(), region] as [string, WarehouseRegion]] : []
+    }))
+    const nextSalesDetails = aggregateSalesHeatmapDetails(historyBuild.resolvedRows, productMetadata)
+    const nextInventoryDetails = aggregateInventoryHeatmapDetails(inventory, productMetadata, usRegionByWarehouseCode)
+    const siteRegionOrder: SiteRegion[] = ['美国', '加拿大', '英国', '欧洲']
+    const nextSiteInventory: SiteInventorySummary[] = inventory.length ? siteRegionOrder.map((region) => {
+      const rows = inventory.filter((row) => row.siteRegion === region)
+      const onHand = rows.filter((row) => row.inventoryStatus === '在库').reduce((sum, row) => sum + row.quantity, 0)
+      const inTransit = rows.filter((row) => row.inventoryStatus === '在途').reduce((sum, row) => sum + row.quantity, 0)
+      const dailyDemand = historic.siteDailyDemand[region] ?? 0
+      const safetyStock = dailyDemand * settings.safetyStockDays
+      const total = onHand + inTransit
+      const coverageDays = dailyDemand > 0 ? total / dailyDemand : Number.POSITIVE_INFINITY
+      const status: SiteInventorySummary['status'] = total <= 0 ? '缺货' : coverageDays < settings.safetyStockDays ? '预警' : '安全'
+      return { region, onHand, inTransit, dailyDemand, safetyStock, coverageDays, status }
+    }) : []
+    const nextRegionInventory: Record<DemandRegion, number> = { 美西: 0, 美中: 0, 美东: 0, 加拿大: 0, 英国: 0, 欧洲: 0 }
+    for (const row of inventory) {
+      if (row.inventoryStatus !== '在库') continue
+      let region: DemandRegion | undefined
+      if (row.siteRegion === '美国') region = row.region
+      else if (row.siteRegion === '加拿大') region = '加拿大'
+      else if (row.siteRegion === '英国') region = '英国'
+      else if (row.siteRegion === '欧洲') region = '欧洲'
+      if (region) nextRegionInventory[region] += row.quantity
+    }
+    const nextStateInventory = aggregateStateInventory(inventory, sourceAddresses)
+
+    setHistory(historic)
+    setSiteInventory(nextSiteInventory)
+    setRegionInventory(nextRegionInventory)
+    setStateInventory(nextStateInventory)
+    setSalesDetails(nextSalesDetails)
+    setInventoryDetails(nextInventoryDetails)
+    await setSetting(settingKeys.heatmapSnapshot, { history: historic, siteInventory: nextSiteInventory, stateInventory: nextStateInventory, salesDetails: nextSalesDetails, inventoryDetails: nextInventoryDetails, savedAt: new Date().toISOString() })
+    return { history: historic, inventory, warehouses, warnings }
+  }
+
+  const loadHeatmapData = async () => {
+    if (heatmapLoading) return
+    setHeatmapLoading(true)
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
+    try {
+      const { warnings } = await computeHeatmapData(files, addresses, analysisSettings)
+      notify(warnings.length ? `热力图数据已加载；${warnings.join('；')}` : '热力图数据已加载', warnings.length ? 'info' : 'success')
+    } catch (error) { notify(error instanceof Error ? error.message : '热力图数据加载失败', 'danger') }
+    finally { setHeatmapLoading(false) }
+  }
+
   const runAnalysis = async () => {
     setRunning(true)
     await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
@@ -184,36 +306,10 @@ export default function App() {
       const valid = (slotId: StoredFile['slotId']) => files.find((file) => file.slotId === slotId && file.validation === '校验通过')
       const inventoryFile = valid('inventory'), forecastFile = valid('forecast'), warehouseFile = valid('warehouse')
       if (!inventoryFile || !forecastFile || !warehouseFile) throw new Error('库存数据、销售预测和仓库维度必须上传、映射并通过校验')
-      let inventory = parseInventory(inventoryFile)
       const forecast = parseForecast(forecastFile)
       const packaging = valid('packaging') ? parsePackaging(valid('packaging')!) : []
-      const historyBuild = buildHistory(files)
-      const historic = historyBuild.summary
-      setHistory(historic)
-      const addressRegion = new Map(addresses.filter((row) => row.confirmed).map((row) => [row.code, row.confirmedRegion!]))
-      const warehouses = parseWarehouses(warehouseFile).map((row) => ({ ...row, region: addressRegion.get(row.code) ?? row.region }))
-      const warehouseCodeByName = new Map(warehouses.map((row) => [row.name, row.code]))
-      const warehouseSiteRegionByName = new Map(warehouses.map((row) => [row.name, row.siteRegion]).filter((pair): pair is [string, SiteRegion] => Boolean(pair[1])))
-      const warehouseRegionByName = new Map(warehouses.map((row) => [row.name, row.region]))
-      const productFile = valid('product')
-      const productRows = productFile ? readMappedRows(productFile) : []
-      const productMetadata = buildProductMetadata(productRows)
-      const seriesByProduct = new Map(productRows.flatMap((row) => {
-        const series = String(row['销售系列'] ?? '').trim()
-        if (!series) return []
-        const keys = new Set([String(row['商品编码'] ?? '').trim(), String(row['SKU'] ?? '').trim()])
-        keys.delete('')
-        return [...keys].map((key) => [key, series] as const)
-      }))
-      inventory = inventory.map((row) => ({ ...row, warehouseCode: warehouseCodeByName.get(row.warehouseName) ?? row.warehouseName, series: seriesByProduct.get(row.productCode) || row.productCode, siteRegion: warehouseSiteRegionByName.get(row.warehouseName), region: warehouseRegionByName.get(row.warehouseName) }))
-      const usRegionByWarehouseCode = new Map(addresses.flatMap((address) => {
-        const region = address.confirmed ? stateRegions[address.state.trim().toUpperCase()] : undefined
-        return region ? [[address.code.trim().toUpperCase(), region] as [string, WarehouseRegion]] : []
-      }))
-      const nextSalesDetails = aggregateSalesHeatmapDetails(historyBuild.resolvedRows, productMetadata)
-      const nextInventoryDetails = aggregateInventoryHeatmapDetails(inventory, productMetadata, usRegionByWarehouseCode)
-      setSalesDetails(nextSalesDetails)
-      setInventoryDetails(nextInventoryDetails)
+      const heatmapData = await computeHeatmapData(files, addresses, analysisSettings)
+      const { inventory, warehouses, history: historic } = heatmapData
       const activePackages = quotes.filter((quote) => quote.status === '已应用' && quote.activeRules.length)
       const packages = activePackages.length ? activePackages : [{ ...defaultQuoteSlots[0], logisticsCompany: '未配置物流商报价' }]
       const candidates = packages.flatMap((quote) => optimizeTransfers({ inventory, forecast, packaging, warehouses, activeRules: quote.activeRules, manualQuotes: latestManualQuotes, settings: analysisSettings, merchantDemandShare: historic.commonDateRange ? historic.channelMerchantShare : 1 }).map((row) => ({ ...row, transferResource: row.transferResource === '物流商中转' ? `${quote.logisticsCompany}中转` : row.transferResource, decision: historic.commonDateRange ? row.decision : '待补数据' as const, transferQuantity: historic.commonDateRange ? row.transferQuantity : 0, transferRatio: historic.commonDateRange ? row.transferRatio : 0, dataQualityMessages: [...row.dataQualityMessages, ...(quote.activeRules.length ? [] : ['尚未应用仓库报价，费用结果仅供数据检查']), ...(historic.commonDateRange ? [] : ['历史出库共同区间不足，不生成正式调拨建议'])] })))
@@ -225,36 +321,8 @@ export default function App() {
       }
       const rows = [...bestByGroup.values()]
       await db.results.put({ id: crypto.randomUUID(), createdAt: new Date().toISOString(), rows })
-      const siteRegionOrder: SiteRegion[] = ['美国', '加拿大', '英国', '欧洲']
-      const nextSiteInventory: SiteInventorySummary[] = siteRegionOrder.map((region) => {
-        const rows = inventory.filter((row) => row.siteRegion === region)
-        const onHand = rows.filter((row) => row.inventoryStatus === '在库').reduce((sum, row) => sum + row.quantity, 0)
-        const inTransit = rows.filter((row) => row.inventoryStatus === '在途').reduce((sum, row) => sum + row.quantity, 0)
-        const dailyDemand = historic.siteDailyDemand[region] ?? 0
-        const safetyStock = dailyDemand * analysisSettings.safetyStockDays
-        const total = onHand + inTransit
-        const coverageDays = dailyDemand > 0 ? total / dailyDemand : Number.POSITIVE_INFINITY
-        const status: SiteInventorySummary['status'] = total <= 0 ? '缺货' : coverageDays < analysisSettings.safetyStockDays ? '预警' : '安全'
-        return { region, onHand, inTransit, dailyDemand, safetyStock, coverageDays, status }
-      })
-      setSiteInventory(nextSiteInventory)
-      const regionOrder: DemandRegion[] = ['美西', '美中', '美东', '加拿大', '英国', '欧洲']
-      const nextRegionInventory: Record<DemandRegion, number> = { 美西: 0, 美中: 0, 美东: 0, 加拿大: 0, 英国: 0, 欧洲: 0 }
-      for (const row of inventory) {
-        if (row.inventoryStatus !== '在库') continue
-        let region: DemandRegion | undefined
-        if (row.siteRegion === '美国') region = row.region
-        else if (row.siteRegion === '加拿大') region = '加拿大'
-        else if (row.siteRegion === '英国') region = '英国'
-        else if (row.siteRegion === '欧洲') region = '欧洲'
-        if (region) nextRegionInventory[region] += row.quantity
-      }
-      setRegionInventory(nextRegionInventory)
-      const nextStateInventory = aggregateStateInventory(inventory, addresses)
-      setStateInventory(nextStateInventory)
-      await setSetting(settingKeys.heatmapSnapshot, { history: historic, siteInventory: nextSiteInventory, stateInventory: nextStateInventory, salesDetails: nextSalesDetails, inventoryDetails: nextInventoryDetails, savedAt: new Date().toISOString() })
       setResults(rows)
-      setPage('results'); notify(`测算完成，共生成 ${rows.length} 条结果`)
+      setPage('results'); notify(`测算完成，共生成 ${rows.length} 条结果${heatmapData.warnings.length ? `；${heatmapData.warnings.join('；')}` : ''}`, heatmapData.warnings.length ? 'info' : 'success')
     } catch (error) { notify(error instanceof Error ? error.message : '测算失败', 'danger') }
     finally { setRunning(false) }
   }
@@ -263,8 +331,8 @@ export default function App() {
     : page === 'mapping' ? <MappingPage files={files} selected={selectedFile ?? files[0]} uploading={uploading} onSelect={setSelectedFile} onUpload={handleUpload} onSave={saveMapping}/>
     : page === 'quotes' ? <QuotePage quotes={quotes} aiSettings={aiSettings} busySlot={busySlot} onUpload={uploadQuote} onApply={applyQuote} onSaveAi={saveAiSettings} onTestAi={testAi}/>
     : page === 'settings' ? <SettingsPage settings={analysisSettings} addresses={addresses} onSaveSettings={saveAnalysisSettings} onSaveAddress={saveAddress} onDeleteAddress={async (id) => { if (id) await db.warehouseAddresses.delete(id); await refreshData() }}/>
-    : page === 'salesHeatmap' ? <SalesHeatmapPage history={history} addresses={addresses} details={salesDetails}/>
-    : page === 'inventoryHeatmap' ? <InventoryHeatmapPage siteInventory={siteInventory} stateInventory={stateInventory} addresses={addresses} details={inventoryDetails}/>
+    : page === 'salesHeatmap' ? <SalesHeatmapPage history={history} addresses={addresses} details={salesDetails} loading={heatmapLoading} onLoad={loadHeatmapData}/>
+    : page === 'inventoryHeatmap' ? <InventoryHeatmapPage siteInventory={siteInventory} stateInventory={stateInventory} addresses={addresses} details={inventoryDetails} loading={heatmapLoading} onLoad={loadHeatmapData}/>
     : page === 'inventoryAnalysis' ? <InventoryAnalysisPage/>
     : <ResultsPage results={results} addresses={addresses} manualQuotes={manualQuotes} history={history} siteInventory={siteInventory} running={running} onRun={runAnalysis} onAddManualQuote={async (quote) => { await db.manualTransferQuotes.add(quote); await refreshData(); notify('自行寻找的中转报价已保存，正在重新测算'); await runAnalysis() }} onDeleteManualQuote={async (id) => { if (id) await db.manualTransferQuotes.delete(id); await refreshData(); notify('自行询价已删除') }} onExport={() => exportAnalysisWorkbook(results, analysisSettings, files, quotes, manualQuotes)}/>
 

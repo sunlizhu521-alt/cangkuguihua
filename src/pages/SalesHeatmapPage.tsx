@@ -1,11 +1,11 @@
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, RefreshCw } from 'lucide-react'
 import { PageHeader, StatusTag } from '../components/Common'
 import HeatmapSkuDetailTable from '../components/HeatmapSkuDetailTable'
 import UnifiedWorldMap from '../components/InventoryWorldMap'
 import type { SalesHeatmapSkuDetail, WarehouseAddress, WarehouseRegion } from '../types'
 import type { HistoricalSummary } from './ResultsPage'
 
-export default function SalesHeatmapPage({ history, addresses, details }: { history: HistoricalSummary; addresses: WarehouseAddress[]; details: SalesHeatmapSkuDetail[] }) {
+export default function SalesHeatmapPage({ history, addresses, details, loading, onLoad }: { history: HistoricalSummary; addresses: WarehouseAddress[]; details: SalesHeatmapSkuDetail[]; loading: boolean; onLoad: () => Promise<void> }) {
   const warehouses = addresses.filter((row) => row.confirmed).map((row) => ({ code: row.code, state: row.state }))
   const internationalRegions = ['加拿大', '英国', '欧洲'] as const
   const internationalDemand = {
@@ -15,7 +15,7 @@ export default function SalesHeatmapPage({ history, addresses, details }: { hist
   }
   const salesHeatMax = Math.max(1, ...Object.values(history.stateDemand), ...Object.values(internationalDemand))
   return <div className="page">
-    <PageHeader title="销售热力图" description="美国、加拿大、英国和欧洲使用同一世界投影，按真实地理关系展示历史订单" />
+    <PageHeader title="销售热力图" description="美国、加拿大、英国和欧洲使用同一世界投影，按真实地理关系展示历史订单" actions={<button type="button" className="button primary" disabled={loading} onClick={() => void onLoad()}><RefreshCw className={loading ? 'spin' : undefined} size={17}/>{loading ? '计算中…' : '加载计算'}</button>} />
     <section className="section map-section">
       <div className="section-heading"><div><h2>北美与欧洲销售需求地理分布</h2><p>美国按州级订单量上色，英国单独统计，其余欧洲国家共用欧洲订单量；全图采用同一投影和色阶。</p></div><StatusTag tone={history.postcodeCoverage >= 0.8 ? 'success' : 'warning'}>有效邮编覆盖率 {(history.postcodeCoverage * 100).toFixed(1)}%</StatusTag></div>
       <div className="map-layout heatmap-wide-layout">
