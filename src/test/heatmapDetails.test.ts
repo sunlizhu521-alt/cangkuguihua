@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aggregateInventoryHeatmapDetails, aggregateSalesHeatmapDetails, buildListingMaterialMap, buildProductMetadata } from '../heatmapDetails'
+import { aggregateInventoryHeatmapDetails, aggregateInventoryHeatmapLocationDetails, aggregateSalesHeatmapDetails, aggregateSalesHeatmapLocationDetails, buildListingMaterialMap, buildProductMetadata } from '../heatmapDetails'
 import type { InventoryRecord, OutboundRecord } from '../types'
 
 function outbound(productCode: string, quantity: number): OutboundRecord {
@@ -16,8 +16,8 @@ function inventory(warehouseCode: string, productCode: string, quantity: number,
 
 describe('热力图SKU级明细聚合', () => {
   const metadata = buildProductMetadata([
-    { '商品编码': 'MAT-1', SKU: 'sku-1', '销售系列': '系列甲', '销售产品线': '产品线甲' },
-    { SKU: 'SKU-2', '销售系列': '系列乙', '销售产品线': '产品线乙' },
+    { '商品编码': 'MAT-1', SKU: 'sku-1', '销售系列': '系列甲', '销售产品线': '产品线甲', '型号': '型号甲' },
+    { SKU: 'SKU-2', '销售系列': '系列乙', '销售产品线': '产品线乙', '型号': '型号乙' },
   ])
   const listingMap = buildListingMaterialMap([
     { '领星商品编码': ' listing-1 ', '物料编码': ' MAT-1 ' },
@@ -30,14 +30,14 @@ describe('热力图SKU级明细聚合', () => {
   })
 
   it('商品维度以商品编码为主键、SKU为备用键，且产品线与系列分开保留', () => {
-    expect(metadata.get('SKU-1')).toEqual({ productLine: '产品线甲', series: '系列甲' })
-    expect(metadata.get('MAT-1')).toEqual({ productLine: '产品线甲', series: '系列甲' })
-    expect(metadata.get('SKU-2')).toEqual({ productLine: '产品线乙', series: '系列乙' })
+    expect(metadata.get('SKU-1')).toEqual({ productLine: '产品线甲', series: '系列甲', model: '型号甲' })
+    expect(metadata.get('MAT-1')).toEqual({ productLine: '产品线甲', series: '系列甲', model: '型号甲' })
+    expect(metadata.get('SKU-2')).toEqual({ productLine: '产品线乙', series: '系列乙', model: '型号乙' })
     const collision = buildProductMetadata([
       { '商品编码': 'MAT-PRIMARY', SKU: 'SKU-A', '销售系列': '主系列', '销售产品线': '主产品线' },
       { '商品编码': 'MAT-OTHER', SKU: 'MAT-PRIMARY', '销售系列': '备用系列', '销售产品线': '备用产品线' },
     ])
-    expect(collision.get('MAT-PRIMARY')).toEqual({ productLine: '主产品线', series: '主系列' })
+    expect(collision.get('MAT-PRIMARY')).toEqual({ productLine: '主产品线', series: '主系列', model: '' })
   })
 
   it('销售明细先通过领星编码映射物料编码，未映射时保留原SKU直查兜底', () => {
@@ -49,7 +49,7 @@ describe('热力图SKU级明细聚合', () => {
       { row: outbound('UNKNOWN', 10), region: '欧洲' },
     ], metadata, listingMap)
 
-    expect(details.find((row) => row.sku === 'listing-1')).toMatchObject({ productLine: '产品线甲', series: '系列甲', amazonQuantity: 35, merchantQuantity: 25, orderQuantity: 60, ratio: 0.6 })
+    expect(details.find((row) => row.sku === 'listing-1')).toMatchObject({ productLine: '产品线甲', series: '系列甲', model: '型号甲', amazonQuantity: 35, merchantQuantity: 25, orderQuantity: 60, ratio: 0.6 })
     expect(details.find((row) => row.sku === 'MAT-1')?.ratio).toBe(0.4)
     expect(details.find((row) => row.sku === 'MAT-1')).toMatchObject({ productLine: '产品线甲', series: '系列甲' })
     expect(details.find((row) => row.region === '加拿大')?.ratio).toBeCloseTo(20 / 130)
@@ -71,5 +71,26 @@ describe('热力图SKU级明细聚合', () => {
     expect(details.find((row) => row.region === '美东')).toMatchObject({ onHand: 0, inTransit: 5, total: 5, ratio: 0.25 })
     expect(details.find((row) => row.region === '加拿大')).toMatchObject({ onHand: 3, inTransit: 2, total: 5, ratio: 0.2 })
     expect(details.some((row) => row.total === 99)).toBe(false)
+  })
+
+  it('按州或海外区域保存可筛选的轻量热力聚合，并带出型号', () => {
+    const west = { ...amazonOutbound('listing-1', 10), postalCode: '90001' }
+    const east = { ...outbound('SKU-2', 6), postalCode: '10001' }
+    const salesLocations = aggregateSalesHeatmapLocationDetails([
+      { row: west, region: '美西' },
+      { row: east, region: '美东' },
+      { row: outbound('SKU-2', 4), region: '加拿大' },
+    ], metadata, listingMap)
+    expect(salesLocations.find((row) => row.state === 'CA')).toMatchObject({ region: '美西', productLine: '产品线甲', series: '系列甲', model: '型号甲', orderQuantity: 10 })
+    expect(salesLocations.find((row) => row.state === 'NY')).toMatchObject({ region: '美东', model: '型号乙', orderQuantity: 6 })
+    expect(salesLocations.find((row) => row.region === '加拿大')).toMatchObject({ state: undefined, orderQuantity: 4 })
+
+    const inventoryLocations = aggregateInventoryHeatmapLocationDetails([
+      inventory('CA-WH', 'MAT-1', 8, '在库', '美国'),
+      inventory('CA-WH', 'MAT-1', 2, '在途', '美国'),
+      inventory('CA-CANADA', 'SKU-2', 5, '在途', '加拿大'),
+    ], metadata, new Map([['CA-WH', 'CA']]))
+    expect(inventoryLocations.find((row) => row.state === 'CA')).toMatchObject({ region: '美西', model: '型号甲', onHand: 8, inTransit: 2, total: 10 })
+    expect(inventoryLocations.find((row) => row.region === '加拿大')).toMatchObject({ model: '型号乙', total: 5 })
   })
 })

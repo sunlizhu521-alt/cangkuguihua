@@ -89,7 +89,7 @@ vi.mock('../fileParser', async (importOriginal) => {
     parseOutbound: vi.fn((_file, channel: '亚马逊仓配' | '商家自发货') => [{ productCode: '热力商品', series: '热力商品', date: '2026-08-01', postalCode: '90001', quantity: channel === '亚马逊仓配' ? 5 : 3, status: '', channel }]),
     parseWarehouses: vi.fn(() => [{ code: 'CA-WH', name: '加州仓', region: '美西', site: '美国', siteRegion: '美国' }]),
     readMappedRows: vi.fn((file: StoredFile) => file.slotId === 'product'
-      ? [{ '商品编码': 'MAT-HEAT', SKU: '备用编码', '销售产品线': '热力产品线', '销售系列': '热力系列' }]
+      ? [{ '商品编码': 'MAT-HEAT', SKU: '备用编码', '销售产品线': '热力产品线', '销售系列': '热力系列', '型号': '热力型号' }]
       : file.slotId === 'listingMaterial' ? [{ '领星商品编码': '热力商品', '物料编码': 'MAT-HEAT' }] : []),
   }
 })
@@ -173,12 +173,13 @@ describe('热力图快照', () => {
     fireEvent.click(screen.getByRole('button', { name: '重新测算' }))
 
     await waitFor(() => expect(storageMock.setSetting).toHaveBeenCalledWith('热力图快照', expect.objectContaining({ stateInventory: { CA: 7 }, savedAt: expect.any(String) })))
-    const saved = storageMock.values.get('热力图快照') as { history: HistoricalSummary; siteInventory: SiteInventorySummary[]; stateInventory: Record<string, number>; salesDetails: SalesHeatmapSkuDetail[]; inventoryDetails: InventoryHeatmapSkuDetail[]; savedAt: string }
+    const saved = storageMock.values.get('热力图快照') as { history: HistoricalSummary; siteInventory: SiteInventorySummary[]; stateInventory: Record<string, number>; salesDetails: SalesHeatmapSkuDetail[]; inventoryDetails: InventoryHeatmapSkuDetail[]; salesLocationDetails: unknown[]; inventoryLocationDetails: unknown[]; savedAt: string }
     expect(saved.history.messages).toContain('亚马逊仓配与商家自发货历史出库数据未同时通过校验，不生成正式地区建议')
     expect(saved.siteInventory.find((row) => row.region === '美国')?.onHand).toBe(7)
     expect(saved.stateInventory).toEqual({ CA: 7 })
     expect(saved.salesDetails).toEqual([])
     expect(saved.inventoryDetails[0]).toMatchObject({ region: '美西', sku: '商品一', onHand: 7, inTransit: 0, total: 7 })
+    expect(saved.inventoryLocationDetails).toEqual([expect.objectContaining({ region: '美西', state: 'CA', sku: '商品一', onHand: 7, total: 7 })])
     expect(Number.isNaN(Date.parse(saved.savedAt))).toBe(false)
   })
 
@@ -205,10 +206,11 @@ describe('热力图快照', () => {
     fireEvent.click(screen.getByRole('button', { name: '销售热力图' }))
     fireEvent.click(screen.getByRole('button', { name: '加载计算' }))
 
-    await waitFor(() => expect(storageMock.setSetting).toHaveBeenCalledWith('热力图快照', expect.objectContaining({ stateInventory: {}, inventoryDetails: [], salesDetails: [expect.objectContaining({ region: '美西', sku: '热力商品', productLine: '热力产品线', series: '热力系列', amazonQuantity: 5, merchantQuantity: 3, orderQuantity: 8 })] })))
+    await waitFor(() => expect(storageMock.setSetting).toHaveBeenCalledWith('热力图快照', expect.objectContaining({ stateInventory: {}, inventoryDetails: [], salesDetails: [expect.objectContaining({ region: '美西', sku: '热力商品', productLine: '热力产品线', series: '热力系列', model: '热力型号', amazonQuantity: 5, merchantQuantity: 3, orderQuantity: 8 })], salesLocationDetails: [expect.objectContaining({ region: '美西', state: 'CA', sku: '热力商品', model: '热力型号', orderQuantity: 8 })] })))
     expect(screen.getByText('热力商品')).toBeInTheDocument()
-    expect(screen.getByText('热力产品线')).toBeInTheDocument()
-    expect(screen.getByText('热力系列')).toBeInTheDocument()
+    expect(screen.getAllByText('热力产品线').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('热力系列').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('热力型号').length).toBeGreaterThan(0)
     expect(screen.getByText(/缺少库存数据、仓库维度文件，库存热力图为空/)).toBeInTheDocument()
     expect(screen.queryByText(/缺少领星商品编码匹配物料编码文件/)).not.toBeInTheDocument()
   })

@@ -1,10 +1,13 @@
-import type { DemandRegion, InventoryHeatmapSkuDetail, InventoryRecord, OutboundRecord, SalesHeatmapSkuDetail, WarehouseRegion } from './types'
+import { stateFromPostalCode } from './stateAggregation'
+import { stateRegions } from './data'
+import type { DemandRegion, InventoryHeatmapLocationDetail, InventoryHeatmapSkuDetail, InventoryRecord, OutboundRecord, SalesHeatmapLocationDetail, SalesHeatmapSkuDetail, WarehouseRegion } from './types'
 
 export const heatmapDetailRegionOrder: DemandRegion[] = ['美东', '美西', '美中', '加拿大', '欧洲', '英国']
 
 export interface ProductMetadata {
   productLine: string
   series: string
+  model: string
 }
 
 export interface ResolvedOutboundRecord {
@@ -34,6 +37,7 @@ export function buildProductMetadata(rows: Record<string, unknown>[]): Map<strin
     value: {
       productLine: String(row['销售产品线'] ?? '').trim(),
       series: String(row['销售系列'] ?? '').trim(),
+      model: String(row['型号'] ?? '').trim(),
     },
   }))
   normalized.forEach(({ sku, value }) => { if (sku && !metadata.has(sku)) metadata.set(sku, value) })
@@ -42,13 +46,13 @@ export function buildProductMetadata(rows: Record<string, unknown>[]): Map<strin
 }
 
 function productInfo(metadata: Map<string, ProductMetadata>, sku: string): ProductMetadata {
-  return metadata.get(productKey(sku)) ?? { productLine: '', series: '' }
+  return metadata.get(productKey(sku)) ?? { productLine: '', series: '', model: '' }
 }
 
 function salesProductInfo(metadata: Map<string, ProductMetadata>, listingMap: Map<string, string>, sku: string): ProductMetadata {
   const skuKey = productKey(sku)
   const materialCode = listingMap.get(skuKey)
-  return (materialCode ? metadata.get(productKey(materialCode)) : undefined) ?? metadata.get(skuKey) ?? { productLine: '', series: '' }
+  return (materialCode ? metadata.get(productKey(materialCode)) : undefined) ?? metadata.get(skuKey) ?? { productLine: '', series: '', model: '' }
 }
 
 function detailRatio(region: DemandRegion, quantity: number, usTotal: number, allTotal: number) {
@@ -100,6 +104,42 @@ export function aggregateInventoryHeatmapDetails(rows: InventoryRecord[], metada
     ...productInfo(metadata, row.sku),
     ratio: detailRatio(row.region, row.total, usTotal, allTotal),
   })).sort(detailSort((row) => row.total))
+}
+
+export function aggregateSalesHeatmapLocationDetails(rows: ResolvedOutboundRecord[], metadata: Map<string, ProductMetadata>, listingMap: Map<string, string>): SalesHeatmapLocationDetail[] {
+  const quantities = new Map<string, Omit<SalesHeatmapLocationDetail, keyof ProductMetadata>>()
+  for (const { row, region } of rows) {
+    if (!row.productCode || row.quantity <= 0) continue
+    const state = ['美东', '美西', '美中'].includes(region) ? stateFromPostalCode(row.postalCode) : undefined
+    const key = `${region}\u0000${state ?? ''}\u0000${productKey(row.productCode)}`
+    const current = quantities.get(key) ?? { region, state, sku: row.productCode, amazonQuantity: 0, merchantQuantity: 0, orderQuantity: 0 }
+    if (row.channel === '亚马逊仓配') current.amazonQuantity += row.quantity
+    else current.merchantQuantity += row.quantity
+    current.orderQuantity += row.quantity
+    quantities.set(key, current)
+  }
+  return [...quantities.values()].map((row) => ({ ...row, ...salesProductInfo(metadata, listingMap, row.sku) }))
+}
+
+export function aggregateInventoryHeatmapLocationDetails(rows: InventoryRecord[], metadata: Map<string, ProductMetadata>, stateByWarehouseCode: Map<string, string>): InventoryHeatmapLocationDetail[] {
+  const quantities = new Map<string, Omit<InventoryHeatmapLocationDetail, keyof ProductMetadata | 'total'>>()
+  for (const row of rows) {
+    if (row.productType !== '成品' || row.quantity <= 0) continue
+    const state = stateByWarehouseCode.get(row.warehouseCode.trim().toLocaleUpperCase())
+    let region: DemandRegion | undefined = state ? stateRegions[state] : undefined
+    if (!region) {
+      if (row.siteRegion === '加拿大') region = '加拿大'
+      else if (row.siteRegion === '英国') region = '英国'
+      else if (row.siteRegion === '欧洲') region = '欧洲'
+    }
+    if (!region) continue
+    const key = `${region}\u0000${state ?? ''}\u0000${productKey(row.productCode)}`
+    const current = quantities.get(key) ?? { region, state, sku: row.productCode, onHand: 0, inTransit: 0 }
+    if (row.inventoryStatus === '在库') current.onHand += row.quantity
+    else current.inTransit += row.quantity
+    quantities.set(key, current)
+  }
+  return [...quantities.values()].map((row) => ({ ...row, ...productInfo(metadata, row.sku), total: row.onHand + row.inTransit }))
 }
 
 function detailSort<T extends { region: DemandRegion }>(quantity: (row: T) => number) {

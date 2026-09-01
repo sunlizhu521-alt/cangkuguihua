@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import InventoryHeatmapPage from '../pages/InventoryHeatmapPage'
 import ResultsPage, { type HistoricalSummary } from '../pages/ResultsPage'
 import SalesHeatmapPage from '../pages/SalesHeatmapPage'
-import type { InventoryHeatmapSkuDetail, SalesHeatmapSkuDetail, SiteInventorySummary, WarehouseAddress } from '../types'
+import type { InventoryHeatmapLocationDetail, InventoryHeatmapSkuDetail, SalesHeatmapLocationDetail, SalesHeatmapSkuDetail, SiteInventorySummary, WarehouseAddress } from '../types'
 
 const originalPointerEvent = window.PointerEvent
 
@@ -32,14 +32,26 @@ const siteInventory: SiteInventorySummary[] = [
 ]
 
 const salesDetails: SalesHeatmapSkuDetail[] = [
-  { region: '美东', productLine: '产品线甲', series: '系列甲', sku: 'SKU-A', amazonQuantity: 70, merchantQuantity: 30, orderQuantity: 100, ratio: 2 / 3 },
-  { region: '美东', productLine: '产品线乙', series: '系列乙', sku: 'SKU-B', amazonQuantity: 20, merchantQuantity: 30, orderQuantity: 50, ratio: 1 / 3 },
-  { region: '欧洲', productLine: '产品线欧', series: '系列欧', sku: 'SKU-EU', amazonQuantity: 0, merchantQuantity: 20, orderQuantity: 20, ratio: 0.1 },
+  { region: '美东', productLine: '产品线甲', series: '系列甲', model: '型号甲', sku: 'SKU-A', amazonQuantity: 70, merchantQuantity: 30, orderQuantity: 100, ratio: 2 / 3 },
+  { region: '美东', productLine: '产品线乙', series: '系列乙', model: '型号乙', sku: 'SKU-B', amazonQuantity: 20, merchantQuantity: 30, orderQuantity: 50, ratio: 1 / 3 },
+  { region: '欧洲', productLine: '产品线欧', series: '系列欧', model: '型号欧', sku: 'SKU-EU', amazonQuantity: 0, merchantQuantity: 20, orderQuantity: 20, ratio: 0.1 },
 ]
 
 const inventoryDetails: InventoryHeatmapSkuDetail[] = [
-  { region: '美西', productLine: '产品线甲', series: '系列甲', sku: 'SKU-A', onHand: 12, inTransit: 8, total: 20, ratio: 1 },
-  { region: '英国', productLine: '产品线英', series: '系列英', sku: 'SKU-UK', onHand: 3, inTransit: 2, total: 5, ratio: 0.2 },
+  { region: '美西', productLine: '产品线甲', series: '系列甲', model: '型号甲', sku: 'SKU-A', onHand: 12, inTransit: 8, total: 20, ratio: 1 },
+  { region: '英国', productLine: '产品线英', series: '系列英', model: '型号英', sku: 'SKU-UK', onHand: 3, inTransit: 2, total: 5, ratio: 0.2 },
+]
+
+const salesLocationDetails: SalesHeatmapLocationDetail[] = [
+  { region: '美西', state: 'CA', productLine: '产品线甲', series: '系列甲', model: '型号甲', sku: 'SKU-A', amazonQuantity: 70, merchantQuantity: 30, orderQuantity: 100 },
+  { region: '美中', state: 'TX', productLine: '产品线乙', series: '系列乙', model: '型号乙', sku: 'SKU-B', amazonQuantity: 20, merchantQuantity: 30, orderQuantity: 50 },
+  { region: '欧洲', productLine: '产品线欧', series: '系列欧', model: '型号欧', sku: 'SKU-EU', amazonQuantity: 0, merchantQuantity: 20, orderQuantity: 20 },
+]
+
+const inventoryLocationDetails: InventoryHeatmapLocationDetail[] = [
+  { region: '美西', state: 'CA', productLine: '产品线甲', series: '系列甲', model: '型号甲', sku: 'SKU-A', onHand: 12, inTransit: 8, total: 20 },
+  { region: '美中', state: 'TX', productLine: '产品线乙', series: '系列乙', model: '型号乙', sku: 'SKU-B', onHand: 20, inTransit: 5, total: 25 },
+  { region: '英国', productLine: '产品线英', series: '系列英', model: '型号英', sku: 'SKU-UK', onHand: 3, inTransit: 2, total: 5 },
 ]
 
 beforeEach(() => {
@@ -236,5 +248,37 @@ describe('州级真实轮廓热力图页面接入', () => {
 
     rerender(<InventoryHeatmapPage siteInventory={siteInventory} stateInventory={{ CA: 13 }} addresses={addresses} details={inventoryDetails} loading onLoad={onLoad}/>)
     expect(screen.getByRole('button', { name: '计算中…' })).toBeDisabled()
+  })
+
+  it('销售产品线、销售系列和型号联合筛选后，销售地图与明细同步变化', () => {
+    render(<SalesHeatmapPage history={history} addresses={addresses} details={salesDetails} locationDetails={salesLocationDetails} loading={false} onLoad={vi.fn()}/>)
+
+    expect(screen.getByRole('combobox', { name: '销售产品线筛选' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: '销售系列筛选' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: '型号筛选' })).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('combobox', { name: '销售产品线筛选' }), { target: { value: '产品线乙' } })
+
+    const map = screen.getByRole('img', { name: '统一世界投影销售热力图：北美和欧洲' })
+    expect(map.querySelector('path[data-state="CA"]')).toHaveAttribute('fill', '#eef1f5')
+    expect(map.querySelector('path[data-state="TX"]')).not.toHaveAttribute('fill', '#eef1f5')
+    expect(screen.getByText('SKU-B')).toBeInTheDocument()
+    expect(screen.queryByText('SKU-A')).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole('combobox', { name: '销售系列筛选' }), { target: { value: '系列乙' } })
+    fireEvent.change(screen.getByRole('combobox', { name: '型号筛选' }), { target: { value: '型号乙' } })
+    expect(screen.getByText('SKU-B').closest('tr')).toHaveTextContent('型号乙')
+    expect(screen.getByRole('button', { name: '重置筛选' })).toBeEnabled()
+  })
+
+  it('库存商品筛选后，州级在库热力、海外合计和明细同步变化', () => {
+    render(<InventoryHeatmapPage siteInventory={siteInventory} stateInventory={{ CA: 13, TX: 20 }} addresses={addresses} details={inventoryDetails} locationDetails={inventoryLocationDetails} loading={false} onLoad={vi.fn()}/>)
+
+    fireEvent.change(screen.getByRole('combobox', { name: '型号筛选' }), { target: { value: '型号甲' } })
+    const map = screen.getByRole('img', { name: '统一世界投影库存热力图：北美和欧洲' })
+    expect(map.querySelector('path[data-state="CA"]')).not.toHaveAttribute('fill', '#eef1f5')
+    expect(map.querySelector('path[data-state="TX"]')).toHaveAttribute('fill', '#eef1f5')
+    expect(map.querySelector('path[data-country="英国"]')).toHaveAttribute('fill', '#eef1f5')
+    expect(screen.getByText('SKU-A')).toBeInTheDocument()
+    expect(screen.queryByText('SKU-UK')).not.toBeInTheDocument()
   })
 })

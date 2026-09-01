@@ -5,7 +5,7 @@ import type { DemandRegion, InventoryRecord, OutboundRecord, WarehouseAddress } 
 
 const zip3States = zip3State as Record<string, string>
 
-function stateFromPostalCode(postalCode: string) {
+export function stateFromPostalCode(postalCode: string) {
   const normalized = postalCode.trim().split('-')[0]
   if (!/^\d{5}$/.test(normalized)) return undefined
   const state = zip3States[normalized.slice(0, 3)]?.replace(/\*$/, '').toUpperCase()

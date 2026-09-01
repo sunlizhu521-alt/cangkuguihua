@@ -12,12 +12,13 @@ import { defaultAddresses, defaultAnalysisSettings, defaultQuoteSlots, stateRegi
 import { db, getSetting, saveFile, saveQuote, settingKeys, setSetting, updateFileMapping } from './storage'
 import { countryToSiteRegion, demandSiteRegion, inspectWorkbook, localQuoteDraft, parseForecast, parseInventory, parseOutbound, parsePackaging, parseWarehouses, postalRegion, readMappedRows } from './fileParser'
 import { optimizeTransfers } from './analysis'
-import { aggregateInventoryHeatmapDetails, aggregateSalesHeatmapDetails, buildListingMaterialMap, buildProductMetadata, type ResolvedOutboundRecord } from './heatmapDetails'
+import { aggregateInventoryHeatmapDetails, aggregateInventoryHeatmapLocationDetails, aggregateSalesHeatmapDetails, aggregateSalesHeatmapLocationDetails, buildListingMaterialMap, buildProductMetadata, type ResolvedOutboundRecord } from './heatmapDetails'
 import { aggregateStateDemand, aggregateStateInventory, resolveOutboundDemandRegion } from './stateAggregation'
 import { parseQuoteWithAi, testAiConnection } from './ai'
 import { exportAnalysisWorkbook } from './exportExcel'
-import type { AiSettings, AnalysisResult, AnalysisSettings, DemandRegion, FileSlotDefinition, InventoryHeatmapSkuDetail, InventoryRecord, ManualTransferQuote, OutboundRecord, PageId, QuoteVersion, SalesHeatmapSkuDetail, SiteInventorySummary, SiteRegion, StoredFile, WarehouseAddress, WarehouseRecord, WarehouseRegion } from './types'
+import type { AiSettings, AnalysisResult, AnalysisSettings, DemandRegion, FileSlotDefinition, InventoryHeatmapLocationDetail, InventoryHeatmapSkuDetail, InventoryRecord, ManualTransferQuote, OutboundRecord, PageId, QuoteVersion, SalesHeatmapLocationDetail, SalesHeatmapSkuDetail, SiteInventorySummary, SiteRegion, StoredFile, WarehouseAddress, WarehouseRecord, WarehouseRegion } from './types'
 import './styles.css'
+import './heatmapFilters.css'
 
 const defaultAiSettings: AiSettings = {
   provider: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5-mini', secret: '', workerUrl: '', connectionStatus: '未测试',
@@ -29,6 +30,8 @@ type HeatmapSnapshot = {
   stateInventory: Record<string, number>
   salesDetails: SalesHeatmapSkuDetail[]
   inventoryDetails: InventoryHeatmapSkuDetail[]
+  salesLocationDetails: SalesHeatmapLocationDetail[]
+  inventoryLocationDetails: InventoryHeatmapLocationDetail[]
   savedAt: string
 }
 
@@ -75,6 +78,8 @@ export default function App() {
   const [stateInventory, setStateInventory] = useState<Record<string, number>>({})
   const [salesDetails, setSalesDetails] = useState<SalesHeatmapSkuDetail[]>([])
   const [inventoryDetails, setInventoryDetails] = useState<InventoryHeatmapSkuDetail[]>([])
+  const [salesLocationDetails, setSalesLocationDetails] = useState<SalesHeatmapLocationDetail[]>([])
+  const [inventoryLocationDetails, setInventoryLocationDetails] = useState<InventoryHeatmapLocationDetail[]>([])
 
   const refreshData = async () => {
     const [nextFiles, nextQuotes, nextAddresses, nextManual, savedResults] = await Promise.all([db.files.toArray(), db.quotes.orderBy('slot').toArray(), db.warehouseAddresses.toArray(), db.manualTransferQuotes.toArray(), db.results.orderBy('createdAt').last()])
@@ -90,6 +95,8 @@ export default function App() {
       setStateInventory(snapshot.stateInventory)
       setSalesDetails(snapshot.salesDetails ?? [])
       setInventoryDetails(snapshot.inventoryDetails ?? [])
+      setSalesLocationDetails(snapshot.salesLocationDetails ?? [])
+      setInventoryLocationDetails(snapshot.inventoryLocationDetails ?? [])
     }
   }
 
@@ -205,10 +212,10 @@ export default function App() {
 
     let productRows: Record<string, unknown>[] = []
     const productFile = valid('product')
-    if (!productFile) warnings.push('缺少商品维度文件，销售产品线和销售系列留空')
+    if (!productFile) warnings.push('缺少商品维度文件，销售产品线、销售系列和型号留空')
     else {
       try { productRows = readMappedRows(productFile) }
-      catch (error) { warnings.push(`商品维度解析失败，销售产品线和销售系列留空：${error instanceof Error ? error.message : '未知原因'}`) }
+      catch (error) { warnings.push(`商品维度解析失败，销售产品线、销售系列和型号留空：${error instanceof Error ? error.message : '未知原因'}`) }
     }
     const productMetadata = buildProductMetadata(productRows)
     let listingMaterialRows: Record<string, unknown>[] = []
@@ -261,6 +268,12 @@ export default function App() {
     }))
     const nextSalesDetails = aggregateSalesHeatmapDetails(historyBuild.resolvedRows, productMetadata, listingMap)
     const nextInventoryDetails = aggregateInventoryHeatmapDetails(inventory, productMetadata, usRegionByWarehouseCode)
+    const stateByWarehouseCode = new Map(sourceAddresses.flatMap((address) => {
+      const state = address.state.trim().toUpperCase()
+      return address.confirmed && stateRegions[state] ? [[address.code.trim().toUpperCase(), state] as const] : []
+    }))
+    const nextSalesLocationDetails = aggregateSalesHeatmapLocationDetails(historyBuild.resolvedRows, productMetadata, listingMap)
+    const nextInventoryLocationDetails = aggregateInventoryHeatmapLocationDetails(inventory, productMetadata, stateByWarehouseCode)
     const siteRegionOrder: SiteRegion[] = ['美国', '加拿大', '英国', '欧洲']
     const nextSiteInventory: SiteInventorySummary[] = inventory.length ? siteRegionOrder.map((region) => {
       const rows = inventory.filter((row) => row.siteRegion === region)
@@ -291,7 +304,9 @@ export default function App() {
     setStateInventory(nextStateInventory)
     setSalesDetails(nextSalesDetails)
     setInventoryDetails(nextInventoryDetails)
-    await setSetting(settingKeys.heatmapSnapshot, { history: historic, siteInventory: nextSiteInventory, stateInventory: nextStateInventory, salesDetails: nextSalesDetails, inventoryDetails: nextInventoryDetails, savedAt: new Date().toISOString() })
+    setSalesLocationDetails(nextSalesLocationDetails)
+    setInventoryLocationDetails(nextInventoryLocationDetails)
+    await setSetting(settingKeys.heatmapSnapshot, { history: historic, siteInventory: nextSiteInventory, stateInventory: nextStateInventory, salesDetails: nextSalesDetails, inventoryDetails: nextInventoryDetails, salesLocationDetails: nextSalesLocationDetails, inventoryLocationDetails: nextInventoryLocationDetails, savedAt: new Date().toISOString() })
     return { history: historic, inventory, warehouses, warnings }
   }
 
@@ -335,12 +350,12 @@ export default function App() {
     finally { setRunning(false) }
   }
 
-  const pageContent = page === 'files' ? <FileLibraryPage files={files} uploading={uploading} onUpload={handleUpload} onMap={(file) => { setSelectedFile(file); setPage('mapping') }} onClear={async () => { await db.transaction('rw', [db.files, db.results, db.manualTransferQuotes], async () => { await db.files.clear(); await db.results.clear(); await db.manualTransferQuotes.clear() }); await db.settings.delete(settingKeys.heatmapSnapshot); setHistory(emptyHistoricalSummary()); setSiteInventory([]); setStateInventory({}); setSalesDetails([]); setInventoryDetails([]); await refreshData(); setSelectedFile(undefined); notify('本次分析文件、结果和自行询价已清空') }}/>
+  const pageContent = page === 'files' ? <FileLibraryPage files={files} uploading={uploading} onUpload={handleUpload} onMap={(file) => { setSelectedFile(file); setPage('mapping') }} onClear={async () => { await db.transaction('rw', [db.files, db.results, db.manualTransferQuotes], async () => { await db.files.clear(); await db.results.clear(); await db.manualTransferQuotes.clear() }); await db.settings.delete(settingKeys.heatmapSnapshot); setHistory(emptyHistoricalSummary()); setSiteInventory([]); setStateInventory({}); setSalesDetails([]); setInventoryDetails([]); setSalesLocationDetails([]); setInventoryLocationDetails([]); await refreshData(); setSelectedFile(undefined); notify('本次分析文件、结果和自行询价已清空') }}/>
     : page === 'mapping' ? <MappingPage files={files} selected={selectedFile ?? files[0]} uploading={uploading} onSelect={setSelectedFile} onUpload={handleUpload} onSave={saveMapping}/>
     : page === 'quotes' ? <QuotePage quotes={quotes} aiSettings={aiSettings} busySlot={busySlot} onUpload={uploadQuote} onApply={applyQuote} onSaveAi={saveAiSettings} onTestAi={testAi}/>
     : page === 'settings' ? <SettingsPage settings={analysisSettings} addresses={addresses} onSaveSettings={saveAnalysisSettings} onSaveAddress={saveAddress} onDeleteAddress={async (id) => { if (id) await db.warehouseAddresses.delete(id); await refreshData() }}/>
-    : page === 'salesHeatmap' ? <SalesHeatmapPage history={history} addresses={addresses} details={salesDetails} loading={heatmapLoading} onLoad={loadHeatmapData}/>
-    : page === 'inventoryHeatmap' ? <InventoryHeatmapPage siteInventory={siteInventory} stateInventory={stateInventory} addresses={addresses} details={inventoryDetails} loading={heatmapLoading} onLoad={loadHeatmapData}/>
+    : page === 'salesHeatmap' ? <SalesHeatmapPage history={history} addresses={addresses} details={salesDetails} locationDetails={salesLocationDetails} loading={heatmapLoading} onLoad={loadHeatmapData}/>
+    : page === 'inventoryHeatmap' ? <InventoryHeatmapPage siteInventory={siteInventory} stateInventory={stateInventory} addresses={addresses} details={inventoryDetails} locationDetails={inventoryLocationDetails} loading={heatmapLoading} onLoad={loadHeatmapData}/>
     : page === 'inventoryAnalysis' ? <InventoryAnalysisPage/>
     : <ResultsPage results={results} addresses={addresses} manualQuotes={manualQuotes} history={history} siteInventory={siteInventory} running={running} onRun={runAnalysis} onAddManualQuote={async (quote) => { await db.manualTransferQuotes.add(quote); await refreshData(); notify('自行寻找的中转报价已保存，正在重新测算'); await runAnalysis() }} onDeleteManualQuote={async (id) => { if (id) await db.manualTransferQuotes.delete(id); await refreshData(); notify('自行询价已删除') }} onExport={() => exportAnalysisWorkbook(results, analysisSettings, files, quotes, manualQuotes)}/>
 

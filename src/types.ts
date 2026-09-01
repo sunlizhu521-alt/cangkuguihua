@@ -47,6 +47,7 @@ export interface HeatmapSkuDetailBase {
   region: DemandRegion
   productLine: string
   series: string
+  model?: string
   sku: string
   ratio: number
 }
@@ -58,6 +59,27 @@ export interface SalesHeatmapSkuDetail extends HeatmapSkuDetailBase {
 }
 
 export interface InventoryHeatmapSkuDetail extends HeatmapSkuDetailBase {
+  onHand: number
+  inTransit: number
+  total: number
+}
+
+export interface HeatmapLocationDetailBase {
+  region: DemandRegion
+  state?: string
+  productLine: string
+  series: string
+  model: string
+  sku: string
+}
+
+export interface SalesHeatmapLocationDetail extends HeatmapLocationDetailBase {
+  amazonQuantity: number
+  merchantQuantity: number
+  orderQuantity: number
+}
+
+export interface InventoryHeatmapLocationDetail extends HeatmapLocationDetailBase {
   onHand: number
   inTransit: number
   total: number
