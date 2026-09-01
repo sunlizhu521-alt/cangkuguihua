@@ -5,6 +5,8 @@ import ResultsPage, { type HistoricalSummary } from '../pages/ResultsPage'
 import SalesHeatmapPage from '../pages/SalesHeatmapPage'
 import type { SiteInventorySummary, WarehouseAddress } from '../types'
 
+const originalPointerEvent = window.PointerEvent
+
 const history: HistoricalSummary = {
   channelAmazonShare: 0.5,
   channelMerchantShare: 0.5,
@@ -30,6 +32,7 @@ const siteInventory: SiteInventorySummary[] = [
 ]
 
 beforeEach(() => {
+  Object.defineProperty(window, 'PointerEvent', { configurable: true, writable: true, value: MouseEvent })
   Object.defineProperty(SVGElement.prototype, 'getBBox', {
     configurable: true,
     value: () => ({ x: 10, y: 20, width: 100, height: 60 }),
@@ -38,6 +41,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  Object.defineProperty(window, 'PointerEvent', { configurable: true, writable: true, value: originalPointerEvent })
   Reflect.deleteProperty(SVGElement.prototype, 'getBBox')
 })
 
@@ -54,6 +58,10 @@ describe('州级真实轮廓热力图页面接入', () => {
     expect(map.querySelector('g[data-group="europe"] path[data-country="英国"]')).toBeInTheDocument()
     expect(map.querySelector('path[data-country="英国"]')).toHaveAttribute('fill', map.querySelector('path[data-country="德国"]')?.getAttribute('fill'))
     expect(map.querySelector('path[data-country="加拿大"]')?.getAttribute('fill')).not.toBe(map.querySelector('path[data-country="英国"]')?.getAttribute('fill'))
+    expect(map.closest('.heatmap-wide-layout')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '放大地图' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '缩小地图' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '重置地图' })).toBeInTheDocument()
     expect(screen.getByText('CA-WH')).toBeInTheDocument()
     expect(screen.queryByText('CA-CANADA')).not.toBeInTheDocument()
   })
@@ -121,6 +129,41 @@ describe('州级真实轮廓热力图页面接入', () => {
     expect(screen.getByRole('tooltip')).toHaveTextContent('区域：美西')
     expect(screen.getByRole('tooltip')).toHaveTextContent('在库量：13 件')
     expect(screen.getByRole('tooltip')).toHaveTextContent('全国占比：39.4%')
+  })
+
+  it('统一地图支持按钮、滚轮缩放、拖拽平移和重置，并限制缩放范围', () => {
+    render(<InventoryHeatmapPage siteInventory={siteInventory} stateInventory={{ CA: 13, TX: 20 }} addresses={addresses}/>)
+
+    const map = screen.getByRole('img', { name: '统一世界投影库存热力图：北美和欧洲' })
+    const transform = map.querySelector('[data-map-transform]')
+    const zoomIn = screen.getByRole('button', { name: '放大地图' })
+    const zoomOut = screen.getByRole('button', { name: '缩小地图' })
+    const reset = screen.getByRole('button', { name: '重置地图' })
+    expect(transform).toHaveAttribute('transform', 'translate(0 0) scale(1)')
+    expect(zoomOut).toBeDisabled()
+
+    fireEvent.click(zoomIn)
+    expect(screen.getByText('135%')).toBeInTheDocument()
+    const beforeDrag = transform?.getAttribute('transform')
+    fireEvent.pointerDown(map, { button: 0, pointerId: 1, clientX: 600, clientY: 300 })
+    fireEvent.pointerMove(map, { pointerId: 1, clientX: 520, clientY: 260 })
+    fireEvent.pointerUp(map, { pointerId: 1 })
+    expect(transform?.getAttribute('transform')).not.toBe(beforeDrag)
+
+    fireEvent.wheel(map, { deltaY: -100, clientX: 500, clientY: 250 })
+    expect(screen.getByText('155%')).toBeInTheDocument()
+    const california = map.querySelector('path[data-state="CA"]')
+    fireEvent.mouseEnter(california!, { clientX: 140, clientY: 120 })
+    expect(screen.getByRole('tooltip')).toHaveTextContent('加利福尼亚（CA）')
+
+    fireEvent.click(reset)
+    expect(screen.getByText('100%')).toBeInTheDocument()
+    expect(transform).toHaveAttribute('transform', 'translate(0 0) scale(1)')
+    expect(zoomOut).toBeDisabled()
+
+    for (let index = 0; index < 8; index += 1) fireEvent.click(zoomIn)
+    expect(screen.getByText('500%')).toBeInTheDocument()
+    expect(zoomIn).toBeDisabled()
   })
 
   it('结果页替换美国地图且保留欧洲地图', () => {

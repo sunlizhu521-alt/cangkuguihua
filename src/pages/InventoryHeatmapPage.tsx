@@ -19,7 +19,7 @@ export default function InventoryHeatmapPage({ siteInventory, stateInventory, ad
     <PageHeader title="库存热力图" description="美国、加拿大、英国和欧洲使用同一世界投影，按真实地理关系展示" />
     <section className="section map-section">
       <div className="section-heading"><div><h2>北美与欧洲库存地理分布</h2><p>加拿大位于美国上方，英国位于欧洲大陆旁；全图使用同一投影和库存色阶。美国州显示在库量，海外区域显示在库量与在途量合计。</p></div></div>
-      <div className="map-layout">
+      <div className="map-layout heatmap-wide-layout">
         <div className="us-map" style={{ alignSelf: 'start' }}><InventoryWorldMap stateValues={stateInventory} siteValues={internationalInventory} warehouses={warehouses} maxValue={inventoryHeatMax}/></div>
         <div className="map-side">
           {(['美西', '美中', '美东'] as WarehouseRegion[]).map((region) => <div className="region-stat" key={region}><span className={`region-dot ${region}`}/><div><strong>{region}</strong><small>美国州在库量</small></div><div className="region-values"><b>{usRegionInventory[region].toLocaleString('zh-CN')} 件</b><small>成品</small></div></div>)}

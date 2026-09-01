@@ -4,6 +4,7 @@ import App from './App'
 import './styles.css'
 import './state-detail.css'
 import './mapping-responsive.css'
+import './heatmap.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
