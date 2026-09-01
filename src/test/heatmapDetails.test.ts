@@ -73,6 +73,17 @@ describe('热力图SKU级明细聚合', () => {
     expect(details.some((row) => row.total === 99)).toBe(false)
   })
 
+  it('没有州地址时仍可使用仓库维度站点识别的美国区域', () => {
+    const row = { ...inventory('金蝶美西仓', 'MAT-1', 12, '在库', '美国'), region: '美西' as const }
+
+    expect(aggregateInventoryHeatmapDetails([row], metadata, new Map())).toMatchObject([
+      { region: '美西', sku: 'MAT-1', model: '型号甲', onHand: 12 },
+    ])
+    expect(aggregateInventoryHeatmapLocationDetails([row], metadata, new Map())).toMatchObject([
+      { region: '美西', state: undefined, sku: 'MAT-1', onHand: 12 },
+    ])
+  })
+
   it('按州或海外区域保存可筛选的轻量热力聚合，并带出型号', () => {
     const west = { ...amazonOutbound('listing-1', 10), postalCode: '90001' }
     const east = { ...outbound('SKU-2', 6), postalCode: '10001' }

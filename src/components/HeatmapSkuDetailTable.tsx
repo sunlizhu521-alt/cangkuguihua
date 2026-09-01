@@ -1,13 +1,13 @@
-import { useMemo, useState } from 'react'
-import { Search } from 'lucide-react'
+import { useMemo } from 'react'
+import type { HeatmapDetailFilterValue } from './HeatmapDimensionFilters'
 import { heatmapDetailRegionOrder } from '../heatmapDetails'
 import type { DemandRegion, InventoryHeatmapSkuDetail, SalesHeatmapSkuDetail } from '../types'
 
 type DetailRow = SalesHeatmapSkuDetail | InventoryHeatmapSkuDetail
 
 type HeatmapSkuDetailTableProps =
-  | { mode: 'sales'; rows: SalesHeatmapSkuDetail[] }
-  | { mode: 'inventory'; rows: InventoryHeatmapSkuDetail[] }
+  | { mode: 'sales'; rows: SalesHeatmapSkuDetail[]; filters: HeatmapDetailFilterValue }
+  | { mode: 'inventory'; rows: InventoryHeatmapSkuDetail[]; filters: HeatmapDetailFilterValue }
 
 const regionGroups: Array<{ label: string; regions: DemandRegion[] }> = [
   { label: '美区组', regions: ['美东', '美西', '美中', '加拿大'] },
@@ -19,14 +19,12 @@ function quantityOf(row: DetailRow) {
 }
 
 export default function HeatmapSkuDetailTable(props: HeatmapSkuDetailTableProps) {
-  const [search, setSearch] = useState('')
-  const [region, setRegion] = useState<'全部' | DemandRegion>('全部')
-  const [sortDirection, setSortDirection] = useState<'desc' | 'asc'>('desc')
+  const { search, region, sortDirection } = props.filters
   const sourceRows: DetailRow[] = props.rows
   const groupedRows = useMemo(() => {
     const keyword = search.trim().toLocaleLowerCase()
     const filtered = sourceRows.filter((row) => {
-      const matchesRegion = region === '全部' || row.region === region
+      const matchesRegion = !region || row.region === region
       const matchesSearch = !keyword || [row.sku, row.productLine, row.series, row.model ?? ''].some((value) => value.toLocaleLowerCase().includes(keyword))
       return matchesRegion && matchesSearch
     })
@@ -46,11 +44,6 @@ export default function HeatmapSkuDetailTable(props: HeatmapSkuDetailTableProps)
     <div className="section-heading">
       <div><h2>{props.mode === 'sales' ? 'SKU级销售明细' : 'SKU级库存明细'}</h2><p>美区组包含美东、美西、美中和加拿大；欧区组包含欧洲和英国。</p></div>
       <span className="muted">显示 {visibleCount.toLocaleString('zh-CN')} / {sourceRows.length.toLocaleString('zh-CN')} 行</span>
-    </div>
-    <div className="sku-detail-controls">
-      <label className="sku-detail-search"><Search size={16}/><input aria-label="搜索SKU级明细" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索SKU、销售产品线、销售系列或型号"/></label>
-      <label>区域筛选<select aria-label="区域筛选" value={region} onChange={(event) => setRegion(event.target.value as '全部' | DemandRegion)}><option value="全部">全部区域</option>{heatmapDetailRegionOrder.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-      <label>数量排序<select aria-label="数量排序" value={sortDirection} onChange={(event) => setSortDirection(event.target.value as 'desc' | 'asc')}><option value="desc">从高到低</option><option value="asc">从低到高</option></select></label>
     </div>
     <div className="table-frame sku-detail-scroll">
       <table>

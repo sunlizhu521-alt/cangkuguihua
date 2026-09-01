@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as XLSX from 'xlsx'
-import { countryToSiteRegion, demandRegion, demandSiteRegion, inspectWorkbook, normalizeDate, parseInventory, parseOutbound, parseWarehouses } from '../fileParser'
+import { countryToSiteRegion, demandRegion, demandSiteRegion, inspectWorkbook, normalizeDate, parseInventory, parseOutbound, parseWarehouses, readProductDimensionRows, warehouseRegionFromSite } from '../fileParser'
 import { fileSlots } from '../data'
 import type { FileSlotId, StoredFile } from '../types'
 
@@ -63,6 +63,14 @@ describe('库存字段解析', () => {
   it('已选择在库量或在途量后不再使用总数量补空值', () => {
     const rows = parseInventory(inventoryFile([{ 仓库: '洛杉矶仓', 货号: '商品一', 总数: 20, 在库: '', 在途: '' }]))
     expect(rows).toHaveLength(0)
+  })
+})
+
+describe('商品维度字段解析', () => {
+  it('型号未单独映射时按物料编码读取同名型号列', () => {
+    const file = mappedFile('product', [{ 物料编码: 'MAT-001', 型号: 'MODEL-A', 销售产品线: '产品线甲' }], { 销售产品线: '销售产品线' })
+
+    expect(readProductDimensionRows(file)).toEqual([{ 商品编码: 'MAT-001', 型号: 'MODEL-A', 销售产品线: '产品线甲' }])
   })
 })
 
@@ -297,6 +305,23 @@ describe('对照表映射字段', () => {
       { site: '英国', siteRegion: '英国' },
       { site: '德国', siteRegion: '欧洲' },
     ])
+  })
+
+  it('库存仓库按金蝶名称关联后，使用站点细分美东、美西和美中', () => {
+    const file = mappedFile('warehouse', [
+      { 金蝶名称原值: '金蝶美东仓', 站点原值: '美东' },
+      { 金蝶名称原值: '金蝶美西仓', 站点原值: '美西' },
+      { 金蝶名称原值: '金蝶美中仓', 站点原值: '美中' },
+      { 金蝶名称原值: '美国共享仓', 站点原值: '美国' },
+    ], { 仓库名称: '金蝶名称原值', 站点: '站点原值' })
+
+    expect(parseWarehouses(file)).toMatchObject([
+      { name: '金蝶美东仓', site: '美东', siteRegion: '美国', region: '美东' },
+      { name: '金蝶美西仓', site: '美西', siteRegion: '美国', region: '美西' },
+      { name: '金蝶美中仓', site: '美中', siteRegion: '美国', region: '美中' },
+      { name: '美国共享仓', site: '美国', siteRegion: '美国', region: '美中' },
+    ])
+    expect(warehouseRegionFromSite('美国')).toBeUndefined()
   })
 
   it('商品维度增加销售产品线、SKU和型号并移除品类', () => {

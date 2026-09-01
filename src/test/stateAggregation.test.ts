@@ -62,4 +62,11 @@ describe('美国州级热力聚合', () => {
 
     expect(result).toEqual({ CA: 10, GA: 5 })
   })
+
+  it('库存仓库名称可经仓库维度金蝶名称桥接到地址州', () => {
+    const rows = [inventory('金蝶美西仓', 12)]
+    rows[0].warehouseName = '金蝶美西仓'
+
+    expect(aggregateStateInventory(rows, [address('WH-WEST', 'CA')], [{ code: 'WH-WEST', name: '金蝶美西仓', region: '美西', site: '美西', siteRegion: '美国' }])).toEqual({ CA: 12 })
+  })
 })

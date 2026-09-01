@@ -139,7 +139,7 @@ export async function inspectWorkbook(file: File, definition: FileSlotDefinition
   }
 }
 
-export function readMappedRows(file: StoredFile): Record<string, unknown>[] {
+function readSourceRows(file: StoredFile): Array<{ source: Record<string, unknown>; mapped: Record<string, unknown> }> {
   const workbook = workbookFromData(file.data, file.fileName)
   const selectedSheet = file.sourceSheetName && workbook.Sheets[file.sourceSheetName]
     ? (() => {
@@ -161,8 +161,23 @@ export function readMappedRows(file: StoredFile): Record<string, unknown>[] {
     .filter((row) => row.some((value) => String(value ?? '').trim() !== ''))
     .map((row) => {
       const source = Object.fromEntries(headers.map((header, index) => [header, row[index] ?? '']))
-      return Object.fromEntries(Object.entries(file.mapping).map(([standard, sourceHeader]) => [standard, source[sourceHeader]]))
+      return {
+        source,
+        mapped: Object.fromEntries(Object.entries(file.mapping).map(([standard, sourceHeader]) => [standard, source[sourceHeader]])),
+      }
     })
+}
+
+export function readMappedRows(file: StoredFile): Record<string, unknown>[] {
+  return readSourceRows(file).map((row) => row.mapped)
+}
+
+export function readProductDimensionRows(file: StoredFile): Record<string, unknown>[] {
+  return readSourceRows(file).map(({ source, mapped }) => ({
+    ...mapped,
+    商品编码: mapped['商品编码'] || source['物料编码'] || source['商品编码'] || '',
+    型号: mapped['型号'] || source['型号'] || '',
+  }))
 }
 
 export function parseInventory(file: StoredFile): InventoryRecord[] {
@@ -282,11 +297,19 @@ export function parseWarehouses(file: StoredFile): WarehouseRecord[] {
     return {
       code,
       name,
-      region: '美中' as const,
+      region: warehouseRegionFromSite(site) ?? '美中',
       site,
       siteRegion: siteRegion(site),
     }
   }).filter((row) => row.code && row.name)
+}
+
+export function warehouseRegionFromSite(site: string): WarehouseRegion | undefined {
+  const value = site.trim()
+  if (/美西|美国西部/i.test(value)) return '美西'
+  if (/美中|美国中部/i.test(value)) return '美中'
+  if (/美东|美国东部/i.test(value)) return '美东'
+  return undefined
 }
 
 export function postalRegion(postalCode: string): WarehouseRegion | undefined {

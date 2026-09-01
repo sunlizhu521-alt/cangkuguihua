@@ -1,7 +1,7 @@
 .heatmap-dimension-filters {
   display: grid;
-  grid-template-columns: repeat(3, minmax(180px, 1fr)) auto;
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(110px, 1fr)) minmax(180px, 1.35fr) 105px 105px auto;
+  gap: 8px;
   align-items: end;
   margin: 0 0 16px;
   padding: 14px;
@@ -18,9 +18,28 @@
   font-weight: 650;
 }
 
-.heatmap-dimension-filters select {
+.heatmap-dimension-filters select,
+.heatmap-dimension-filters input {
   width: 100%;
   min-width: 0;
+}
+
+.heatmap-filter-search {
+  position: relative;
+  display: block;
+}
+
+.heatmap-filter-search svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  color: #8190a5;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.heatmap-filter-search input {
+  padding-left: 32px;
 }
 
 .heatmap-dimension-filters .button {
@@ -29,12 +48,7 @@
 
 @media (max-width: 1250px) {
   .heatmap-dimension-filters {
-    grid-template-columns: repeat(3, minmax(150px, 1fr));
-  }
-
-  .heatmap-dimension-filters .button {
-    grid-column: 1 / -1;
-    width: max-content;
+    grid-template-columns: repeat(3, minmax(100px, 1fr)) minmax(160px, 1.2fr) 100px 100px auto;
   }
 }
 

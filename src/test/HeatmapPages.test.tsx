@@ -205,6 +205,10 @@ describe('州级真实轮廓热力图页面接入', () => {
   it('销售SKU明细按美区、欧区分组，并支持搜索、区域筛选和数量排序', () => {
     const { container } = render(<SalesHeatmapPage history={history} addresses={addresses} details={salesDetails} loading={false} onLoad={vi.fn()}/>)
 
+    const filterRow = screen.getByLabelText('热力图商品筛选器')
+    expect(filterRow).toContainElement(screen.getByRole('combobox', { name: '销售产品线筛选' }))
+    for (const label of ['搜索SKU级明细', '区域筛选', '数量排序']) expect(filterRow).toContainElement(screen.getByLabelText(label))
+    expect(container.querySelector('.sku-detail-controls')).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'SKU级销售明细' })).toBeInTheDocument()
     expect(screen.getByText('美区组')).toBeInTheDocument()
     expect(screen.getByText('欧区组')).toBeInTheDocument()

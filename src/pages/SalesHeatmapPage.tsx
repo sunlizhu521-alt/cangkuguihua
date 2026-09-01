@@ -1,7 +1,7 @@
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { PageHeader, StatusTag } from '../components/Common'
-import HeatmapDimensionFilters, { emptyHeatmapDimensionFilters, hasHeatmapDimensionFilters, matchesHeatmapDimensionFilters } from '../components/HeatmapDimensionFilters'
+import HeatmapDimensionFilters, { emptyHeatmapDetailFilters, emptyHeatmapDimensionFilters, hasHeatmapDimensionFilters, matchesHeatmapDimensionFilters } from '../components/HeatmapDimensionFilters'
 import HeatmapSkuDetailTable from '../components/HeatmapSkuDetailTable'
 import UnifiedWorldMap from '../components/InventoryWorldMap'
 import type { DemandRegion, SalesHeatmapLocationDetail, SalesHeatmapSkuDetail, WarehouseAddress, WarehouseRegion } from '../types'
@@ -17,6 +17,7 @@ function updateSalesRatios(rows: SalesHeatmapSkuDetail[]) {
 
 export default function SalesHeatmapPage({ history, addresses, details, locationDetails = [], loading, onLoad }: { history: HistoricalSummary; addresses: WarehouseAddress[]; details: SalesHeatmapSkuDetail[]; locationDetails?: SalesHeatmapLocationDetail[]; loading: boolean; onLoad: () => Promise<void> }) {
   const [filters, setFilters] = useState(emptyHeatmapDimensionFilters)
+  const [detailFilters, setDetailFilters] = useState(emptyHeatmapDetailFilters)
   const filtersActive = hasHeatmapDimensionFilters(filters)
   const filteredDetails = useMemo(() => updateSalesRatios(details.filter((row) => matchesHeatmapDimensionFilters(row, filters))), [details, filters])
   const filteredLocations = useMemo(() => locationDetails.filter((row) => matchesHeatmapDimensionFilters(row, filters)), [filters, locationDetails])
@@ -56,7 +57,7 @@ export default function SalesHeatmapPage({ history, addresses, details, location
     <PageHeader title="销售热力图" description="汇总亚马逊仓配发货与商家自发货，并分别保留两类发货数量" actions={<button type="button" className="button primary" disabled={loading} onClick={() => void onLoad()}><RefreshCw className={loading ? 'spin' : undefined} size={17}/>{loading ? '计算中…' : '加载计算'}</button>} />
     <section className="section map-section">
       <div className="section-heading"><div><h2>北美与欧洲销售需求地理分布</h2><p>美国按州级订单量上色，英国单独统计，其余欧洲国家共用欧洲订单量；全图采用同一投影和色阶。</p></div><StatusTag tone={history.postcodeCoverage >= 0.8 ? 'success' : 'warning'}>有效邮编覆盖率 {(history.postcodeCoverage * 100).toFixed(1)}%</StatusTag></div>
-      <HeatmapDimensionFilters rows={locationDetails.length ? locationDetails : details} value={filters} onChange={setFilters}/>
+      <HeatmapDimensionFilters rows={locationDetails.length ? locationDetails : details} value={filters} onChange={setFilters} detailValue={detailFilters} onDetailChange={setDetailFilters}/>
       {filtersActive && !locationDetails.length ? <div className="map-warning"><AlertTriangle size={15}/>当前是旧版热力图快照，请点击“加载计算”后再按商品维度筛选地图。</div> : null}
       <div className="map-layout heatmap-wide-layout">
         <div className="us-map" style={{ alignSelf: 'start' }}><UnifiedWorldMap stateValues={filteredMap.stateDemand} siteValues={internationalDemand} warehouses={warehouses} maxValue={salesHeatMax} ariaLabel="统一世界投影销售热力图：北美和欧洲" stateValueLabel="订单量" countryValueLabel="订单量" countryRatioLabel="全部有效订单占比" countryRatios={{ 加拿大: filteredMap.regionRatios.加拿大, 英国: filteredMap.regionRatios.英国, 欧洲: filteredMap.regionRatios.欧洲 }}/></div>
@@ -67,6 +68,6 @@ export default function SalesHeatmapPage({ history, addresses, details, location
         </div>
       </div>
     </section>
-    <HeatmapSkuDetailTable mode="sales" rows={filteredDetails}/>
+    <HeatmapSkuDetailTable mode="sales" rows={filteredDetails} filters={detailFilters}/>
   </div>
 }

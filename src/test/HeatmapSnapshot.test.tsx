@@ -91,6 +91,7 @@ vi.mock('../fileParser', async (importOriginal) => {
     readMappedRows: vi.fn((file: StoredFile) => file.slotId === 'product'
       ? [{ '商品编码': 'MAT-HEAT', SKU: '备用编码', '销售产品线': '热力产品线', '销售系列': '热力系列', '型号': '热力型号' }]
       : file.slotId === 'listingMaterial' ? [{ '领星商品编码': '热力商品', '物料编码': 'MAT-HEAT' }] : []),
+    readProductDimensionRows: vi.fn(() => [{ '商品编码': 'MAT-HEAT', SKU: '备用编码', '销售产品线': '热力产品线', '销售系列': '热力系列', '型号': '热力型号' }]),
   }
 })
 
@@ -195,7 +196,7 @@ describe('热力图快照', () => {
     expect(screen.getByText('商品一')).toBeInTheDocument()
     expect(screen.getByText(/热力图数据已加载/)).toBeInTheDocument()
     expect(screen.getByText(/缺少亚马逊仓配出库数据、商家自发货出库数据，销售热力图为空/)).toBeInTheDocument()
-    expect(screen.getByText(/缺少领星商品编码匹配物料编码文件，产品线\/系列留空/)).toBeInTheDocument()
+    expect(screen.getByText(/缺少领星商品编码匹配物料编码文件，销售产品线、销售系列和型号留空/)).toBeInTheDocument()
   })
 
   it('缺少库存和仓库文件时仍保留可计算的销售热力图', async () => {

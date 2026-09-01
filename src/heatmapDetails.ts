@@ -32,7 +32,7 @@ export function buildListingMaterialMap(rows: Record<string, unknown>[]): Map<st
 export function buildProductMetadata(rows: Record<string, unknown>[]): Map<string, ProductMetadata> {
   const metadata = new Map<string, ProductMetadata>()
   const normalized = rows.map((row) => ({
-    productCode: productKey(row['商品编码']),
+    productCode: productKey(row['商品编码'] || row['物料编码']),
     sku: productKey(row['SKU']),
     value: {
       productLine: String(row['销售产品线'] ?? '').trim(),
@@ -85,7 +85,8 @@ export function aggregateInventoryHeatmapDetails(rows: InventoryRecord[], metada
     if (row.productType !== '成品' || row.quantity <= 0) continue
     let region: DemandRegion | undefined = usRegionByWarehouseCode.get(row.warehouseCode.trim().toLocaleUpperCase())
     if (!region) {
-      if (row.siteRegion === '加拿大') region = '加拿大'
+      if (row.siteRegion === '美国' && row.region) region = row.region
+      else if (row.siteRegion === '加拿大') region = '加拿大'
       else if (row.siteRegion === '英国') region = '英国'
       else if (row.siteRegion === '欧洲') region = '欧洲'
     }
@@ -128,7 +129,8 @@ export function aggregateInventoryHeatmapLocationDetails(rows: InventoryRecord[]
     const state = stateByWarehouseCode.get(row.warehouseCode.trim().toLocaleUpperCase())
     let region: DemandRegion | undefined = state ? stateRegions[state] : undefined
     if (!region) {
-      if (row.siteRegion === '加拿大') region = '加拿大'
+      if (row.siteRegion === '美国' && row.region) region = row.region
+      else if (row.siteRegion === '加拿大') region = '加拿大'
       else if (row.siteRegion === '英国') region = '英国'
       else if (row.siteRegion === '欧洲') region = '欧洲'
     }

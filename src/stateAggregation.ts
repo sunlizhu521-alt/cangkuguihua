@@ -1,7 +1,7 @@
 import { stateRegions } from './data'
 import zip3State from './data/zip3State.json'
 import { countryToSiteRegion, demandRegion } from './fileParser'
-import type { DemandRegion, InventoryRecord, OutboundRecord, WarehouseAddress } from './types'
+import type { DemandRegion, InventoryRecord, OutboundRecord, WarehouseAddress, WarehouseRecord } from './types'
 
 const zip3States = zip3State as Record<string, string>
 
@@ -32,16 +32,26 @@ export function aggregateStateDemand(rows: OutboundRecord[]): Record<string, num
   return stateDemand
 }
 
-export function aggregateStateInventory(rows: InventoryRecord[], addresses: WarehouseAddress[]): Record<string, number> {
-  const stateByWarehouseCode = new Map(addresses.flatMap((address) => {
+function warehouseKey(value: string) {
+  return value.trim().replace(/\s+/g, '').toUpperCase()
+}
+
+export function aggregateStateInventory(rows: InventoryRecord[], addresses: WarehouseAddress[], warehouses: WarehouseRecord[] = []): Record<string, number> {
+  const stateByWarehouseKey = new Map(addresses.flatMap((address) => {
     const state = address.state.trim().toUpperCase()
     if (!address.confirmed || !stateRegions[state]) return []
-    return [[address.code.trim().toUpperCase(), state] as const]
+    return [address.code, address.name].filter(Boolean).map((value) => [warehouseKey(value), state] as const)
   }))
+  for (const warehouse of warehouses) {
+    const state = stateByWarehouseKey.get(warehouseKey(warehouse.code)) ?? stateByWarehouseKey.get(warehouseKey(warehouse.name))
+    if (!state) continue
+    stateByWarehouseKey.set(warehouseKey(warehouse.code), state)
+    stateByWarehouseKey.set(warehouseKey(warehouse.name), state)
+  }
   const stateInventory: Record<string, number> = {}
   for (const row of rows) {
     if (row.inventoryStatus !== '在库') continue
-    const state = stateByWarehouseCode.get(row.warehouseCode.trim().toUpperCase())
+    const state = stateByWarehouseKey.get(warehouseKey(row.warehouseCode)) ?? stateByWarehouseKey.get(warehouseKey(row.warehouseName))
     if (!state) continue
     stateInventory[state] = (stateInventory[state] ?? 0) + row.quantity
   }
