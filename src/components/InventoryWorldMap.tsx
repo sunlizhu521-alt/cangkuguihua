@@ -23,6 +23,12 @@ interface InventoryWorldMapProps {
   siteValues: Record<InternationalRegion, number>
   warehouses?: Array<{ code: string; state: string }>
   maxValue: number
+  ariaLabel?: string
+  stateValueLabel?: string
+  countryValueLabel?: string
+  stateRatioLabel?: string
+  countryRatioLabel?: string
+  countryRatios?: Partial<Record<InternationalRegion, number>>
 }
 
 interface Tooltip {
@@ -46,20 +52,31 @@ function heatColor(intensity: number) {
 
 const inventoryStateById = new Map(inventoryUsStates.map((state) => [state.id, state]))
 
-export default function InventoryWorldMap({ stateValues, siteValues, warehouses = [], maxValue }: InventoryWorldMapProps) {
+export default function InventoryWorldMap({
+  stateValues,
+  siteValues,
+  warehouses = [],
+  maxValue,
+  ariaLabel = '统一世界投影库存热力图：北美和欧洲',
+  stateValueLabel = '在库量',
+  countryValueLabel = '库存量（在库+在途）',
+  stateRatioLabel = '全国占比',
+  countryRatioLabel = '占比',
+  countryRatios,
+}: InventoryWorldMapProps) {
   const [tooltip, setTooltip] = useState<Tooltip | null>(null)
   const stateTotal = Object.values(stateValues).reduce((sum, value) => sum + value, 0)
   const internationalTotal = Object.values(siteValues).reduce((sum, value) => sum + value, 0)
   const fill = (value: number) => value > 0 ? heatColor(value / Math.max(1, maxValue)) : '#eef1f5'
   const showStateTooltip = (event: MouseEvent<SVGPathElement>, id: string, name: string, value: number) => setTooltip({
-    x: event.clientX, y: event.clientY, title: `${stateNamesZh[id] ?? name}（${id}）`, region: stateRegions[id] ?? '—', value, valueLabel: '在库量', ratioLabel: '全国占比', ratio: stateTotal > 0 ? `${((value / stateTotal) * 100).toFixed(1)}%` : '0%',
+    x: event.clientX, y: event.clientY, title: `${stateNamesZh[id] ?? name}（${id}）`, region: stateRegions[id] ?? '—', value, valueLabel: stateValueLabel, ratioLabel: stateRatioLabel, ratio: stateTotal > 0 ? `${((value / stateTotal) * 100).toFixed(1)}%` : '0%',
   })
   const showCountryTooltip = (event: MouseEvent<SVGPathElement>, title: string, region: InternationalRegion, value: number) => setTooltip({
-    x: event.clientX, y: event.clientY, title, region, value, valueLabel: '库存量（在库+在途）', ratioLabel: '占比', ratio: internationalTotal > 0 ? `${((value / internationalTotal) * 100).toFixed(1)}%` : '0%',
+    x: event.clientX, y: event.clientY, title, region, value, valueLabel: countryValueLabel, ratioLabel: countryRatioLabel, ratio: countryRatios?.[region] !== undefined ? `${(countryRatios[region]! * 100).toFixed(1)}%` : internationalTotal > 0 ? `${((value / internationalTotal) * 100).toFixed(1)}%` : '0%',
   })
 
   return <div style={{ position: 'relative' }}>
-    <svg viewBox={inventoryWorldViewBox} role="img" aria-label="统一世界投影库存热力图：北美和欧洲" style={{ width: '100%', height: 'auto' }}>
+    <svg viewBox={inventoryWorldViewBox} role="img" aria-label={ariaLabel} style={{ width: '100%', height: 'auto' }}>
       <rect x="0" y="0" width="1400" height="640" fill="#eef6f6" rx="10"/>
       <text x="470" y="28" textAnchor="middle" className="map-region">北美组（美国 + 加拿大）</text>
       <text x="1220" y="28" textAnchor="middle" className="map-region">欧洲组（英国 + 欧洲大陆）</text>

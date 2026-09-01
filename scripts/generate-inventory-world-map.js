@@ -15,11 +15,6 @@ const countryNames = {
   'Lithuania': '立陶宛', 'Bulgaria': '保加利亚', 'Monaco': '摩纳哥',
 }
 
-const projection = d3.geoMercator().fitExtent(
-  [[20, 45], [1380, 610]],
-  { type: 'MultiPoint', coordinates: [[-178, 18], [35, 72]] },
-)
-const path = d3.geoPath(projection)
 const stateFeatures = admin1.features.filter((feature) => feature.properties.adm0_a3 === 'USA')
 const canadaFeature = countries.find((feature) => feature.properties.name === 'Canada')
 const europeFeatures = countries.filter((feature) => countryNames[feature.properties.name])
@@ -28,11 +23,16 @@ if (stateFeatures.length !== 51) throw new Error(`美国州级要素应为51个�
 if (!canadaFeature) throw new Error('world-atlas 中未找到加拿大轮廓')
 if (europeFeatures.length !== 28) throw new Error(`欧洲国家要素应为28个，实际为${europeFeatures.length}个`)
 
+const displayedFeatures = { type: 'FeatureCollection', features: [...stateFeatures, canadaFeature, ...europeFeatures] }
+const projection = d3.geoMercator().fitExtent([[20, 48], [1380, 612]], displayedFeatures)
+const path = d3.geoPath(projection)
+
 const projectFeature = (feature, extra = {}) => {
   const projectedPath = path(feature)
   const center = path.centroid(feature)
-  if (!projectedPath || !center.every(Number.isFinite)) throw new Error(`轮廓投影失败：${feature.properties.name}`)
-  return { ...extra, path: projectedPath, center }
+  const bounds = path.bounds(feature)
+  if (!projectedPath || !center.every(Number.isFinite) || !bounds.flat().every(Number.isFinite)) throw new Error(`轮廓投影失败：${feature.properties.name}`)
+  return { ...extra, path: projectedPath, center, bounds }
 }
 
 const usStates = stateFeatures
@@ -45,7 +45,7 @@ const continentalEurope = { type: 'FeatureCollection', features: europeFeatures.
 const europeCenter = path.centroid(continentalEurope)
 if (!uk || !europeCenter.every(Number.isFinite)) throw new Error('英国或欧洲标签位置生成失败')
 
-const content = `export interface ProjectedMapRegion {\n  id: string\n  name: string\n  path: string\n  center: [number, number]\n}\n\nexport const inventoryWorldViewBox = '0 0 1400 640'\n\nexport const inventoryUsStates: ProjectedMapRegion[] = ${JSON.stringify(usStates)}\n\nexport const inventoryCanada: ProjectedMapRegion = ${JSON.stringify(canada)}\n\nexport const inventoryEuropeCountries: ProjectedMapRegion[] = ${JSON.stringify(europeCountries)}\n\nexport const inventoryMapLabels = ${JSON.stringify({ canada: canada.center, uk: uk.center, europe: europeCenter })} as const\n`
+const content = `export interface ProjectedMapRegion {\n  id: string\n  name: string\n  path: string\n  center: [number, number]\n  bounds: [[number, number], [number, number]]\n}\n\nexport const inventoryWorldViewBox = '0 0 1400 640'\n\nexport const inventoryUsStates: ProjectedMapRegion[] = ${JSON.stringify(usStates)}\n\nexport const inventoryCanada: ProjectedMapRegion = ${JSON.stringify(canada)}\n\nexport const inventoryEuropeCountries: ProjectedMapRegion[] = ${JSON.stringify(europeCountries)}\n\nexport const inventoryMapLabels = ${JSON.stringify({ canada: canada.center, uk: uk.center, europe: europeCenter })} as const\n`
 
 fs.writeFileSync('src/data/inventoryWorldMap.ts', content)
 console.log('统一投影生成完成：美国州', usStates.length, '加拿大', 1, '欧洲国家', europeCountries.length, '总字符', content.length)

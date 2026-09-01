@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import InventoryHeatmapPage from '../pages/InventoryHeatmapPage'
 import ResultsPage, { type HistoricalSummary } from '../pages/ResultsPage'
@@ -10,6 +10,7 @@ const history: HistoricalSummary = {
   channelMerchantShare: 0.5,
   postcodeCoverage: 1,
   regionDemand: { 美西: 0.4, 美中: 0.2, 美东: 0.2, 加拿大: 0.1, 英国: 0.05, 欧洲: 0.05 },
+  regionDemandAmount: { 美西: 80, 美中: 40, 美东: 40, 加拿大: 20, 英国: 10, 欧洲: 10 },
   stateDemand: { CA: 100, TX: 50 },
   siteDailyDemand: { 美国: 10, 加拿大: 2, 英国: 1, 欧洲: 1 },
   commonDateRange: '2026-08-01 至 2026-08-31',
@@ -41,17 +42,46 @@ afterEach(() => {
 })
 
 describe('州级真实轮廓热力图页面接入', () => {
-  it('销售热力图共用州级订单量并保留海外地图', async () => {
+  it('销售热力图用统一世界投影展示美国51州和29个海外国家轮廓', () => {
     render(<SalesHeatmapPage history={history} addresses={addresses}/>)
 
-    expect(screen.getByRole('img', { name: '美国各州订单量分布图' })).toBeInTheDocument()
-    const internationalMap = screen.getByRole('img', { name: '加拿大、英国和欧洲需求分布图' })
-    expect(internationalMap.querySelectorAll('path')).toHaveLength(29)
-    expect(internationalMap.querySelector('path[data-country="加拿大"]')).toBeInTheDocument()
-    expect(internationalMap.querySelector('path[data-country="英国"]')).toBeInTheDocument()
-    expect(internationalMap.querySelector('path[data-country="德国"]')).toBeInTheDocument()
-    await waitFor(() => expect(screen.getByText('CA-WH')).toBeInTheDocument())
+    const map = screen.getByRole('img', { name: '统一世界投影销售热力图：北美和欧洲' })
+    expect(screen.queryByRole('img', { name: '美国各州订单量分布图' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: '加拿大、英国和欧洲需求分布图' })).not.toBeInTheDocument()
+    expect(map.querySelectorAll('path[data-state]')).toHaveLength(51)
+    expect(map.querySelectorAll('path[data-country]')).toHaveLength(29)
+    expect(map.querySelector('g[data-group="north-america"] path[data-country="加拿大"]')).toBeInTheDocument()
+    expect(map.querySelector('g[data-group="europe"] path[data-country="英国"]')).toBeInTheDocument()
+    expect(map.querySelector('path[data-country="英国"]')).toHaveAttribute('fill', map.querySelector('path[data-country="德国"]')?.getAttribute('fill'))
+    expect(map.querySelector('path[data-country="加拿大"]')?.getAttribute('fill')).not.toBe(map.querySelector('path[data-country="英国"]')?.getAttribute('fill'))
+    expect(screen.getByText('CA-WH')).toBeInTheDocument()
     expect(screen.queryByText('CA-CANADA')).not.toBeInTheDocument()
+  })
+
+  it('销售地图按订单量悬停展示，并在加拿大无订单时显示灰色', () => {
+    const noCanadaHistory: HistoricalSummary = {
+      ...history,
+      regionDemand: { ...history.regionDemand, 加拿大: 0 },
+      regionDemandAmount: { ...history.regionDemandAmount, 加拿大: 0 },
+    }
+    render(<SalesHeatmapPage history={noCanadaHistory} addresses={addresses}/>)
+
+    const map = screen.getByRole('img', { name: '统一世界投影销售热力图：北美和欧洲' })
+    expect(map.querySelector('path[data-country="加拿大"]')).toHaveAttribute('fill', '#eef1f5')
+    expect(screen.getByText('无订单数据')).toBeInTheDocument()
+
+    const germany = map.querySelector('path[data-country="德国"]')
+    expect(germany).toBeInTheDocument()
+    fireEvent.mouseEnter(germany!, { clientX: 100, clientY: 100 })
+    expect(screen.getByRole('tooltip')).toHaveTextContent('订单量：10 件')
+    expect(screen.getByRole('tooltip')).toHaveTextContent('全部有效订单占比：5.0%')
+    fireEvent.mouseLeave(germany!)
+
+    const california = map.querySelector('path[data-state="CA"]')
+    expect(california).toBeInTheDocument()
+    fireEvent.mouseEnter(california!, { clientX: 120, clientY: 100 })
+    expect(screen.getByRole('tooltip')).toHaveTextContent('订单量：100 件')
+    expect(screen.getByRole('tooltip')).toHaveTextContent('全国占比：66.7%')
   })
 
   it('库存热力图使用统一世界投影展示相邻的北美和欧洲，并共用库存色阶', () => {

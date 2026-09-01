@@ -9,6 +9,7 @@ export interface HistoricalSummary {
   channelMerchantShare: number
   postcodeCoverage: number
   regionDemand: Record<DemandRegion, number>
+  regionDemandAmount: Record<DemandRegion, number>
   stateDemand: Record<string, number>
   siteDailyDemand: Record<SiteRegion, number>
   commonDateRange?: string

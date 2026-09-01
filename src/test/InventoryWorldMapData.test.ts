@@ -16,4 +16,18 @@ describe('库存地图统一世界投影数据', () => {
     expect(Math.abs(inventoryMapLabels.uk[0] - inventoryMapLabels.europe[0])).toBeLessThan(150)
     expect(Math.abs(inventoryMapLabels.uk[1] - inventoryMapLabels.europe[1])).toBeLessThan(50)
   })
+
+  it('加拿大北部和欧洲北部均完整落在地图视窗内', () => {
+    const allRegions = [...inventoryUsStates, inventoryCanada, ...inventoryEuropeCountries]
+    allRegions.forEach((region) => {
+      expect(region.bounds[0][0]).toBeGreaterThanOrEqual(19.99)
+      expect(region.bounds[0][1]).toBeGreaterThanOrEqual(47.99)
+      expect(region.bounds[1][0]).toBeLessThanOrEqual(1380.01)
+      expect(region.bounds[1][1]).toBeLessThanOrEqual(612.01)
+    })
+    const finland = inventoryEuropeCountries.find((country) => country.name === '芬兰')
+    expect(finland).toBeDefined()
+    expect(inventoryCanada.bounds[0][1]).toBeGreaterThanOrEqual(47.99)
+    expect(finland!.bounds[0][1]).toBeGreaterThanOrEqual(47.99)
+  })
 })
