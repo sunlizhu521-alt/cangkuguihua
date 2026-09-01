@@ -54,24 +54,43 @@ describe('州级真实轮廓热力图页面接入', () => {
     expect(screen.queryByText('CA-CANADA')).not.toBeInTheDocument()
   })
 
-  it('库存热力图只把美国州库存传入州地图，海外按在库加在途展示真实轮廓', async () => {
+  it('库存热力图使用统一世界投影展示相邻的北美和欧洲，并共用库存色阶', () => {
     render(<InventoryHeatmapPage siteInventory={siteInventory} stateInventory={{ CA: 13, TX: 20 }} addresses={addresses}/>)
 
-    const usMap = screen.getByRole('img', { name: '美国各州在库量分布图' })
-    const internationalMap = screen.getByRole('img', { name: '加拿大、英国和欧洲库存分布图' })
-    expect(internationalMap.querySelectorAll('path')).toHaveLength(29)
+    const map = screen.getByRole('img', { name: '统一世界投影库存热力图：北美和欧洲' })
+    expect(screen.queryByRole('img', { name: '美国各州在库量分布图' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: '加拿大、英国和欧洲库存分布图' })).not.toBeInTheDocument()
+    expect(map.querySelectorAll('path[data-state]')).toHaveLength(51)
+    expect(map.querySelectorAll('path[data-country]')).toHaveLength(29)
+    expect(map.querySelector('g[data-group="north-america"] path[data-country="加拿大"]')).toBeInTheDocument()
+    expect(map.querySelector('g[data-group="europe"] path[data-country="英国"]')).toBeInTheDocument()
     expect(screen.getAllByText('13 件')).not.toHaveLength(0)
-    expect(usMap.querySelector('path[data-state="CA"]')).toHaveAttribute('fill', internationalMap.querySelector('path[data-country="加拿大"]')?.getAttribute('fill'))
-    expect(internationalMap.querySelector('path[data-country="德国"]')).toHaveAttribute('fill', internationalMap.querySelector('path[data-country="法国"]')?.getAttribute('fill'))
-    expect(internationalMap.querySelector('path[data-country="英国"]')?.getAttribute('fill')).not.toBe(internationalMap.querySelector('path[data-country="德国"]')?.getAttribute('fill'))
-    const germany = internationalMap.querySelector('path[data-country="德国"]')
+    expect(map.querySelector('path[data-state="CA"]')).toHaveAttribute('fill', map.querySelector('path[data-country="加拿大"]')?.getAttribute('fill'))
+    expect(map.querySelector('path[data-country="德国"]')).toHaveAttribute('fill', map.querySelector('path[data-country="法国"]')?.getAttribute('fill'))
+    expect(map.querySelector('path[data-country="英国"]')?.getAttribute('fill')).not.toBe(map.querySelector('path[data-country="德国"]')?.getAttribute('fill'))
+    expect(screen.getByText('CA-WH')).toBeInTheDocument()
+    expect(screen.queryByText('CA-CANADA')).not.toBeInTheDocument()
+  })
+
+  it('统一地图悬停仍使用美国全国占比和海外区域占比口径', () => {
+    render(<InventoryHeatmapPage siteInventory={siteInventory} stateInventory={{ CA: 13, TX: 20 }} addresses={addresses}/>)
+
+    const map = screen.getByRole('img', { name: '统一世界投影库存热力图：北美和欧洲' })
+    const germany = map.querySelector('path[data-country="德国"]')
     expect(germany).toBeInTheDocument()
     fireEvent.mouseEnter(germany!, { clientX: 100, clientY: 100 })
-    expect(screen.getByText('区域：欧洲')).toBeInTheDocument()
-    expect(screen.getByText('库存量（在库+在途）：3 件')).toBeInTheDocument()
-    expect(screen.getByText('占比：15.0%')).toBeInTheDocument()
-    await waitFor(() => expect(screen.getByText('CA-WH')).toBeInTheDocument())
-    expect(screen.queryByText('CA-CANADA')).not.toBeInTheDocument()
+    expect(screen.getByRole('tooltip')).toHaveTextContent('区域：欧洲')
+    expect(screen.getByRole('tooltip')).toHaveTextContent('库存量（在库+在途）：3 件')
+    expect(screen.getByRole('tooltip')).toHaveTextContent('占比：15.0%')
+    fireEvent.mouseLeave(germany!)
+
+    const california = map.querySelector('path[data-state="CA"]')
+    expect(california).toBeInTheDocument()
+    fireEvent.mouseEnter(california!, { clientX: 120, clientY: 100 })
+    expect(screen.getByRole('tooltip')).toHaveTextContent('加利福尼亚（CA）')
+    expect(screen.getByRole('tooltip')).toHaveTextContent('区域：美西')
+    expect(screen.getByRole('tooltip')).toHaveTextContent('在库量：13 件')
+    expect(screen.getByRole('tooltip')).toHaveTextContent('全国占比：39.4%')
   })
 
   it('结果页替换美国地图且保留欧洲地图', () => {
