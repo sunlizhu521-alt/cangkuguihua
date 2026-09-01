@@ -13,18 +13,30 @@ export function stateFromPostalCode(postalCode: string) {
 }
 
 export function resolveOutboundDemandRegion(row: OutboundRecord): DemandRegion | undefined {
+  const countryRegion = countryToSiteRegion(row.country ?? '')
+  // 有明确国家/地区时先确定海外区域，避免法德意西等5位邮编被误当成美国邮编。
+  if (countryRegion === '欧洲' || countryRegion === '英国' || countryRegion === '加拿大') return countryRegion
   const postalRegion = demandRegion(row.postalCode)
+  if (countryRegion === '美国') {
+    if (postalRegion === '美东' || postalRegion === '美西' || postalRegion === '美中') {
+      const state = stateFromPostalCode(row.postalCode)
+      return state ? stateRegions[state] : postalRegion
+    }
+    return undefined
+  }
   if (postalRegion === '美东' || postalRegion === '美西' || postalRegion === '美中') {
     const state = stateFromPostalCode(row.postalCode)
     return state ? stateRegions[state] : postalRegion
   }
   if (postalRegion === '加拿大' || postalRegion === '英国') return postalRegion
-  return countryToSiteRegion(row.country ?? '') === '欧洲' ? '欧洲' : undefined
+  return undefined
 }
 
 export function aggregateStateDemand(rows: OutboundRecord[]): Record<string, number> {
   const stateDemand: Record<string, number> = {}
   for (const row of rows) {
+    const region = resolveOutboundDemandRegion(row)
+    if (region !== '美东' && region !== '美中' && region !== '美西') continue
     const state = stateFromPostalCode(row.postalCode)
     if (!state) continue
     stateDemand[state] = (stateDemand[state] ?? 0) + row.quantity

@@ -241,6 +241,17 @@ describe('出库数据解析', () => {
     expect(rows[0].postalCode).toBe('34986')
   })
 
+  it('亚马逊仓配结算导出存在type列时只统计订单并排除退款', () => {
+    const file = mappedFile('amazonOutbound', [
+      { type: 'Order', sku: '商品一', date: '2026-08-01', quantity: 2, postal: '34986', fulfillment: 'Amazon' },
+      { type: 'Refund', sku: '商品一', date: '2026-08-02', quantity: 2, postal: '34986', fulfillment: 'Amazon' },
+    ], { SKU: 'sku', 日期: 'date', 数量: 'quantity', 邮编: 'postal', 履约方式: 'fulfillment' })
+
+    expect(parseOutbound(file, '亚马逊仓配')).toMatchObject([
+      { productCode: '商品一', date: '2026-08-01', quantity: 2 },
+    ])
+  })
+
   it('商家自发货使用日期和SKU映射', () => {
     const file = mappedFile('merchantOutbound', [{ sku: '商品二', date: '2026-08-02', quantity: 1, postal: '90001' }], { SKU: 'sku', 日期: 'date', 数量: 'quantity', 邮编: 'postal' })
     expect(parseOutbound(file, '商家自发货')).toHaveLength(1)

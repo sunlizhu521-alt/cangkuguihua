@@ -233,6 +233,8 @@ export function parseOutbound(file: StoredFile, channel: OutboundRecord['channel
     const sourceHeader = file.mapping[standardField]
     return sourceHeader ? sourceColumns.get(sourceHeader) : undefined
   }
+  const exactSourceColumn = (sourceHeader: string) => headers.findIndex((header) => header.trim().toLowerCase() === sourceHeader.toLowerCase())
+  const transactionTypeColumn = exactSourceColumn('type')
   const columns = {
     productCode: mappedColumn('SKU'),
     date: mappedColumn('日期'),
@@ -240,6 +242,7 @@ export function parseOutbound(file: StoredFile, channel: OutboundRecord['channel
     quantity: mappedColumn('数量'),
     fulfillment: mappedColumn('履约方式'),
     country: mappedColumn('国家/地区'),
+    transactionType: transactionTypeColumn >= 0 ? transactionTypeColumn : undefined,
   }
   const denseSheet = sheet as unknown as Array<Array<XLSX.CellObject | undefined>>
   const cellValue = (row: number, column: number | undefined) => {
@@ -256,6 +259,11 @@ export function parseOutbound(file: StoredFile, channel: OutboundRecord['channel
     if (channel === '亚马逊仓配' && columns.fulfillment !== undefined) {
       const fulfillment = String(cellValue(row, columns.fulfillment)).trim().toLowerCase()
       if (fulfillment !== 'amazon') continue
+    }
+    // 亚马逊结算导出同时包含订单和退款；存在 type 列时只统计真实订单，避免把退款数量重复算成发货。
+    if (channel === '亚马逊仓配' && columns.transactionType !== undefined) {
+      const transactionType = String(cellValue(row, columns.transactionType)).trim().toLowerCase()
+      if (transactionType !== 'order') continue
     }
     // 中国内地及美国本土外小岛屿不进入销售区域统计。
     const country = String(cellValue(row, columns.country)).trim()
@@ -349,7 +357,7 @@ export function demandSiteRegion(postalCode: string): SiteRegion | undefined {
   return undefined
 }
 
-const europeanCountryPattern = /德国|法国|意大利|西班牙|荷兰|比利时|瑞典|丹麦|葡萄牙|奥地利|希腊|爱尔兰|卢森堡|捷克|马耳他|拉脱维亚|芬兰|波兰|爱沙尼亚|克罗地亚|斯洛伐克|匈牙利|罗马尼亚|斯洛文尼亚|立陶宛|保加利亚|摩纳哥|欧洲|^(?:DE|FR|IT|ES|NL|BE|SE|DK|PT|AT|GR|IE|LU|CZ|MT|LV|FI|PL|EE|HR|SK|HU|RO|SI|LT|BG|MC|EU)$/i
+const europeanCountryPattern = /德国|法国|意大利|西班牙|荷兰|比利时|瑞典|丹麦|葡萄牙|奥地利|希腊|爱尔兰|卢森堡|捷克|马耳他|拉脱维亚|芬兰|波兰|爱沙尼亚|克罗地亚|斯洛伐克|匈牙利|罗马尼亚|斯洛文尼亚|立陶宛|保加利亚|摩纳哥|欧洲|Germany|France|Italy|Spain|Netherlands|Belgium|Sweden|Denmark|Portugal|Austria|Greece|Ireland|Luxembourg|Czechia|Czech Republic|Malta|Latvia|Finland|Poland|Estonia|Croatia|Slovakia|Hungary|Romania|Slovenia|Lithuania|Bulgaria|Monaco|Europe|^(?:DE|FR|IT|ES|NL|BE|SE|DK|PT|AT|GR|IE|LU|CZ|MT|LV|FI|PL|EE|HR|SK|HU|RO|SI|LT|BG|MC|EU)$/i
 
 export function countryToSiteRegion(country: string): SiteRegion | undefined {
   const c = country.trim()

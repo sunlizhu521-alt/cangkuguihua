@@ -15,19 +15,24 @@ function address(code: string, state: string, confirmed = true): WarehouseAddres
 }
 
 describe('美国州级热力聚合', () => {
-  it('销售区域优先按邮编精确定州，查不到州时按邮编首位兜底', () => {
+  it('美国销售区域按邮编精确定州，查不到州时按邮编首位兜底', () => {
     expect(resolveOutboundDemandRegion(outbound('90001', 1, '美国'))).toBe('美西')
     expect(resolveOutboundDemandRegion(outbound('07030', 1, 'USA'))).toBe('美东')
-    expect(resolveOutboundDemandRegion(outbound('75001', 1, '法国'))).toBe('美中')
+    expect(resolveOutboundDemandRegion(outbound('75001', 1, '法国'))).toBe('欧洲')
     expect(resolveOutboundDemandRegion(outbound('00000', 1, '美国'))).toBe('美东')
-    expect(resolveOutboundDemandRegion(outbound('90001', 1, '加拿大'))).toBe('美西')
+    expect(resolveOutboundDemandRegion(outbound('90001', 1, '加拿大'))).toBe('加拿大')
   })
 
-  it('加拿大和英国按邮编识别，邮编无法识别时仅用国家字段兜底欧洲', () => {
-    expect(resolveOutboundDemandRegion(outbound('K1A 0B1', 1, '美国'))).toBe('加拿大')
-    expect(resolveOutboundDemandRegion(outbound('SW1A 1AA', 1, '法国'))).toBe('英国')
+  it('海外国家优先确定区域，缺少国家时再按邮编识别', () => {
+    expect(resolveOutboundDemandRegion(outbound('K1A 0B1', 1))).toBe('加拿大')
+    expect(resolveOutboundDemandRegion(outbound('SW1A 1AA', 1))).toBe('英国')
     expect(resolveOutboundDemandRegion(outbound('FR-75001', 1, '法国'))).toBe('欧洲')
-    expect(resolveOutboundDemandRegion(outbound('未知', 1, '加拿大'))).toBeUndefined()
+    expect(resolveOutboundDemandRegion(outbound('未知', 1, '加拿大'))).toBe('加拿大')
+    expect(resolveOutboundDemandRegion(outbound('75001', 1, 'France'))).toBe('欧洲')
+    expect(resolveOutboundDemandRegion(outbound('10115', 1, '德国'))).toBe('欧洲')
+    expect(resolveOutboundDemandRegion(outbound('00118', 1, '意大利'))).toBe('欧洲')
+    expect(resolveOutboundDemandRegion(outbound('28001', 1, '西班牙'))).toBe('欧洲')
+    expect(resolveOutboundDemandRegion(outbound('未知', 1, '英国'))).toBe('英国')
   })
 
   it('州级需求只按美国邮编前3位聚合，海外和异常邮编安全跳过', () => {
@@ -40,7 +45,7 @@ describe('美国州级热力聚合', () => {
       outbound('00000', 17),
     ])
 
-    expect(result).toEqual({ CA: 10, NJ: 5, TX: 11 })
+    expect(result).toEqual({ CA: 10, NJ: 5 })
   })
 
   it('库存只汇总已确认且有有效美国州地址的在库量', () => {
