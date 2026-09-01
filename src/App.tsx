@@ -12,7 +12,7 @@ import { defaultAddresses, defaultAnalysisSettings, defaultQuoteSlots, stateRegi
 import { db, getSetting, saveFile, saveQuote, settingKeys, setSetting, updateFileMapping } from './storage'
 import { countryToSiteRegion, demandSiteRegion, inspectWorkbook, localQuoteDraft, parseForecast, parseInventory, parseOutbound, parsePackaging, parseWarehouses, postalRegion, readMappedRows } from './fileParser'
 import { optimizeTransfers } from './analysis'
-import { aggregateInventoryHeatmapDetails, aggregateSalesHeatmapDetails, buildProductMetadata, type ResolvedOutboundRecord } from './heatmapDetails'
+import { aggregateInventoryHeatmapDetails, aggregateSalesHeatmapDetails, buildListingMaterialMap, buildProductMetadata, type ResolvedOutboundRecord } from './heatmapDetails'
 import { aggregateStateDemand, aggregateStateInventory, resolveOutboundDemandRegion } from './stateAggregation'
 import { parseQuoteWithAi, testAiConnection } from './ai'
 import { exportAnalysisWorkbook } from './exportExcel'
@@ -211,6 +211,14 @@ export default function App() {
       catch (error) { warnings.push(`商品维度解析失败，销售产品线和销售系列留空：${error instanceof Error ? error.message : '未知原因'}`) }
     }
     const productMetadata = buildProductMetadata(productRows)
+    let listingMaterialRows: Record<string, unknown>[] = []
+    const listingMaterialFile = valid('listingMaterial')
+    if (!listingMaterialFile) warnings.push('缺少领星商品编码匹配物料编码文件，产品线/系列留空')
+    else {
+      try { listingMaterialRows = readMappedRows(listingMaterialFile) }
+      catch (error) { warnings.push(`领星商品编码匹配物料编码文件解析失败，产品线/系列留空：${error instanceof Error ? error.message : '未知原因'}`) }
+    }
+    const listingMap = buildListingMaterialMap(listingMaterialRows)
     const seriesByProduct = new Map(productRows.flatMap((row) => {
       const series = String(row['销售系列'] ?? '').trim()
       if (!series) return []
@@ -251,7 +259,7 @@ export default function App() {
       const region = address.confirmed ? stateRegions[address.state.trim().toUpperCase()] : undefined
       return region ? [[address.code.trim().toUpperCase(), region] as [string, WarehouseRegion]] : []
     }))
-    const nextSalesDetails = aggregateSalesHeatmapDetails(historyBuild.resolvedRows, productMetadata)
+    const nextSalesDetails = aggregateSalesHeatmapDetails(historyBuild.resolvedRows, productMetadata, listingMap)
     const nextInventoryDetails = aggregateInventoryHeatmapDetails(inventory, productMetadata, usRegionByWarehouseCode)
     const siteRegionOrder: SiteRegion[] = ['美国', '加拿大', '英国', '欧洲']
     const nextSiteInventory: SiteInventorySummary[] = inventory.length ? siteRegionOrder.map((region) => {

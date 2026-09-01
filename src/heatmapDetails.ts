@@ -16,17 +16,28 @@ function productKey(value: unknown) {
   return String(value ?? '').trim().toLocaleUpperCase()
 }
 
+export function buildListingMaterialMap(rows: Record<string, unknown>[]): Map<string, string> {
+  const listingMap = new Map<string, string>()
+  for (const row of rows) {
+    const listingCode = productKey(row['领星商品编码'])
+    const materialCode = String(row['物料编码'] ?? '').trim()
+    if (listingCode && materialCode) listingMap.set(listingCode, materialCode)
+  }
+  return listingMap
+}
+
 export function buildProductMetadata(rows: Record<string, unknown>[]): Map<string, ProductMetadata> {
   const metadata = new Map<string, ProductMetadata>()
-  for (const row of rows) {
-    const value = {
+  const normalized = rows.map((row) => ({
+    productCode: productKey(row['商品编码']),
+    sku: productKey(row['SKU']),
+    value: {
       productLine: String(row['销售产品线'] ?? '').trim(),
       series: String(row['销售系列'] ?? '').trim(),
-    }
-    const keys = new Set([productKey(row['商品编码']), productKey(row['SKU'])])
-    keys.delete('')
-    keys.forEach((key) => metadata.set(key, value))
-  }
+    },
+  }))
+  normalized.forEach(({ sku, value }) => { if (sku && !metadata.has(sku)) metadata.set(sku, value) })
+  normalized.forEach(({ productCode, value }) => { if (productCode) metadata.set(productCode, value) })
   return metadata
 }
 
@@ -34,11 +45,17 @@ function productInfo(metadata: Map<string, ProductMetadata>, sku: string): Produ
   return metadata.get(productKey(sku)) ?? { productLine: '', series: '' }
 }
 
+function salesProductInfo(metadata: Map<string, ProductMetadata>, listingMap: Map<string, string>, sku: string): ProductMetadata {
+  const skuKey = productKey(sku)
+  const materialCode = listingMap.get(skuKey)
+  return (materialCode ? metadata.get(productKey(materialCode)) : undefined) ?? metadata.get(skuKey) ?? { productLine: '', series: '' }
+}
+
 function detailRatio(region: DemandRegion, quantity: number, usTotal: number, allTotal: number) {
   return ['美东', '美西', '美中'].includes(region) ? (usTotal ? quantity / usTotal : 0) : (allTotal ? quantity / allTotal : 0)
 }
 
-export function aggregateSalesHeatmapDetails(rows: ResolvedOutboundRecord[], metadata: Map<string, ProductMetadata>): SalesHeatmapSkuDetail[] {
+export function aggregateSalesHeatmapDetails(rows: ResolvedOutboundRecord[], metadata: Map<string, ProductMetadata>, listingMap: Map<string, string>): SalesHeatmapSkuDetail[] {
   const quantities = new Map<string, { region: DemandRegion; sku: string; orderQuantity: number }>()
   for (const { row, region } of rows) {
     if (!row.productCode || row.quantity <= 0) continue
@@ -51,7 +68,7 @@ export function aggregateSalesHeatmapDetails(rows: ResolvedOutboundRecord[], met
   const usTotal = [...quantities.values()].filter((row) => ['美东', '美西', '美中'].includes(row.region)).reduce((sum, row) => sum + row.orderQuantity, 0)
   return [...quantities.values()].map((row) => ({
     ...row,
-    ...productInfo(metadata, row.sku),
+    ...salesProductInfo(metadata, listingMap, row.sku),
     ratio: detailRatio(row.region, row.orderQuantity, usTotal, allTotal),
   })).sort(detailSort((row) => row.orderQuantity))
 }

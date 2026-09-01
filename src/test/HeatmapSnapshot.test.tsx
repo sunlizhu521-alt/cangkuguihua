@@ -88,6 +88,9 @@ vi.mock('../fileParser', async (importOriginal) => {
     parseForecast: vi.fn(() => [{ series: '商品一', quantity: 7, periodDays: 45 }]),
     parseOutbound: vi.fn((_file, channel: '亚马逊仓配' | '商家自发货') => [{ productCode: '热力商品', series: '热力商品', date: '2026-08-01', postalCode: '90001', quantity: channel === '亚马逊仓配' ? 5 : 3, status: '', channel }]),
     parseWarehouses: vi.fn(() => [{ code: 'CA-WH', name: '加州仓', region: '美西', site: '美国', siteRegion: '美国' }]),
+    readMappedRows: vi.fn((file: StoredFile) => file.slotId === 'product'
+      ? [{ '商品编码': 'MAT-HEAT', SKU: '备用编码', '销售产品线': '热力产品线', '销售系列': '热力系列' }]
+      : file.slotId === 'listingMaterial' ? [{ '领星商品编码': '热力商品', '物料编码': 'MAT-HEAT' }] : []),
   }
 })
 
@@ -191,18 +194,22 @@ describe('热力图快照', () => {
     expect(screen.getByText('商品一')).toBeInTheDocument()
     expect(screen.getByText(/热力图数据已加载/)).toBeInTheDocument()
     expect(screen.getByText(/缺少亚马逊仓配出库数据、商家自发货出库数据，销售热力图为空/)).toBeInTheDocument()
+    expect(screen.getByText(/缺少领星商品编码匹配物料编码文件，产品线\/系列留空/)).toBeInTheDocument()
   })
 
   it('缺少库存和仓库文件时仍保留可计算的销售热力图', async () => {
-    storageMock.setFiles([storedFile('amazonOutbound'), storedFile('merchantOutbound')])
+    storageMock.setFiles([storedFile('amazonOutbound'), storedFile('merchantOutbound'), storedFile('product'), storedFile('listingMaterial')])
     render(<App/>)
 
     await waitFor(() => expect(screen.getByText('amazonOutbound.xlsx')).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: '销售热力图' }))
     fireEvent.click(screen.getByRole('button', { name: '加载计算' }))
 
-    await waitFor(() => expect(storageMock.setSetting).toHaveBeenCalledWith('热力图快照', expect.objectContaining({ stateInventory: {}, inventoryDetails: [], salesDetails: [expect.objectContaining({ region: '美西', sku: '热力商品', orderQuantity: 8 })] })))
+    await waitFor(() => expect(storageMock.setSetting).toHaveBeenCalledWith('热力图快照', expect.objectContaining({ stateInventory: {}, inventoryDetails: [], salesDetails: [expect.objectContaining({ region: '美西', sku: '热力商品', productLine: '热力产品线', series: '热力系列', orderQuantity: 8 })] })))
     expect(screen.getByText('热力商品')).toBeInTheDocument()
+    expect(screen.getByText('热力产品线')).toBeInTheDocument()
+    expect(screen.getByText('热力系列')).toBeInTheDocument()
     expect(screen.getByText(/缺少库存数据、仓库维度文件，库存热力图为空/)).toBeInTheDocument()
+    expect(screen.queryByText(/缺少领星商品编码匹配物料编码文件/)).not.toBeInTheDocument()
   })
 })
