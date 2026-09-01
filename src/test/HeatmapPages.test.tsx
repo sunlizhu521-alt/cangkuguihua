@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import InventoryHeatmapPage from '../pages/InventoryHeatmapPage'
 import ResultsPage, { type HistoricalSummary } from '../pages/ResultsPage'
 import SalesHeatmapPage from '../pages/SalesHeatmapPage'
-import type { SiteInventorySummary, WarehouseAddress } from '../types'
+import type { InventoryHeatmapSkuDetail, SalesHeatmapSkuDetail, SiteInventorySummary, WarehouseAddress } from '../types'
 
 const originalPointerEvent = window.PointerEvent
 
@@ -31,6 +31,17 @@ const siteInventory: SiteInventorySummary[] = [
   { region: '欧洲', onHand: 2, inTransit: 1, dailyDemand: 0, safetyStock: 0, coverageDays: Number.POSITIVE_INFINITY, status: '安全' },
 ]
 
+const salesDetails: SalesHeatmapSkuDetail[] = [
+  { region: '美东', productLine: '产品线甲', series: '系列甲', sku: 'SKU-A', orderQuantity: 100, ratio: 2 / 3 },
+  { region: '美东', productLine: '产品线乙', series: '系列乙', sku: 'SKU-B', orderQuantity: 50, ratio: 1 / 3 },
+  { region: '欧洲', productLine: '产品线欧', series: '系列欧', sku: 'SKU-EU', orderQuantity: 20, ratio: 0.1 },
+]
+
+const inventoryDetails: InventoryHeatmapSkuDetail[] = [
+  { region: '美西', productLine: '产品线甲', series: '系列甲', sku: 'SKU-A', onHand: 12, inTransit: 8, total: 20, ratio: 1 },
+  { region: '英国', productLine: '产品线英', series: '系列英', sku: 'SKU-UK', onHand: 3, inTransit: 2, total: 5, ratio: 0.2 },
+]
+
 beforeEach(() => {
   Object.defineProperty(window, 'PointerEvent', { configurable: true, writable: true, value: MouseEvent })
   Object.defineProperty(SVGElement.prototype, 'getBBox', {
@@ -47,7 +58,7 @@ afterEach(() => {
 
 describe('州级真实轮廓热力图页面接入', () => {
   it('销售热力图用统一世界投影展示美国51州和29个海外国家轮廓', () => {
-    render(<SalesHeatmapPage history={history} addresses={addresses}/>)
+    render(<SalesHeatmapPage history={history} addresses={addresses} details={salesDetails}/>)
 
     const map = screen.getByRole('img', { name: '统一世界投影销售热力图：北美和欧洲' })
     expect(screen.queryByRole('img', { name: '美国各州订单量分布图' })).not.toBeInTheDocument()
@@ -72,7 +83,7 @@ describe('州级真实轮廓热力图页面接入', () => {
       regionDemand: { ...history.regionDemand, 加拿大: 0 },
       regionDemandAmount: { ...history.regionDemandAmount, 加拿大: 0 },
     }
-    render(<SalesHeatmapPage history={noCanadaHistory} addresses={addresses}/>)
+    render(<SalesHeatmapPage history={noCanadaHistory} addresses={addresses} details={salesDetails}/>)
 
     const map = screen.getByRole('img', { name: '统一世界投影销售热力图：北美和欧洲' })
     expect(map.querySelector('path[data-country="加拿大"]')).toHaveAttribute('fill', '#eef1f5')
@@ -93,7 +104,7 @@ describe('州级真实轮廓热力图页面接入', () => {
   })
 
   it('库存热力图使用统一世界投影展示相邻的北美和欧洲，并共用库存色阶', () => {
-    render(<InventoryHeatmapPage siteInventory={siteInventory} stateInventory={{ CA: 13, TX: 20 }} addresses={addresses}/>)
+    render(<InventoryHeatmapPage siteInventory={siteInventory} stateInventory={{ CA: 13, TX: 20 }} addresses={addresses} details={inventoryDetails}/>)
 
     const map = screen.getByRole('img', { name: '统一世界投影库存热力图：北美和欧洲' })
     expect(screen.queryByRole('img', { name: '美国各州在库量分布图' })).not.toBeInTheDocument()
@@ -111,7 +122,7 @@ describe('州级真实轮廓热力图页面接入', () => {
   })
 
   it('统一地图悬停仍使用美国全国占比和海外区域占比口径', () => {
-    render(<InventoryHeatmapPage siteInventory={siteInventory} stateInventory={{ CA: 13, TX: 20 }} addresses={addresses}/>)
+    render(<InventoryHeatmapPage siteInventory={siteInventory} stateInventory={{ CA: 13, TX: 20 }} addresses={addresses} details={inventoryDetails}/>)
 
     const map = screen.getByRole('img', { name: '统一世界投影库存热力图：北美和欧洲' })
     const germany = map.querySelector('path[data-country="德国"]')
@@ -132,7 +143,7 @@ describe('州级真实轮廓热力图页面接入', () => {
   })
 
   it('统一地图支持按钮、滚轮缩放、拖拽平移和重置，并限制缩放范围', () => {
-    render(<InventoryHeatmapPage siteInventory={siteInventory} stateInventory={{ CA: 13, TX: 20 }} addresses={addresses}/>)
+    render(<InventoryHeatmapPage siteInventory={siteInventory} stateInventory={{ CA: 13, TX: 20 }} addresses={addresses} details={inventoryDetails}/>)
 
     const map = screen.getByRole('img', { name: '统一世界投影库存热力图：北美和欧洲' })
     const transform = map.querySelector('[data-map-transform]')
@@ -171,5 +182,39 @@ describe('州级真实轮廓热力图页面接入', () => {
 
     expect(screen.getByRole('img', { name: '美国各州订单量分布图' })).toBeInTheDocument()
     expect(screen.getByRole('img', { name: '欧洲英国与欧洲大陆需求分布图' })).toBeInTheDocument()
+  })
+
+  it('销售SKU明细按美区、欧区分组，并支持搜索、区域筛选和数量排序', () => {
+    const { container } = render(<SalesHeatmapPage history={history} addresses={addresses} details={salesDetails}/>)
+
+    expect(screen.getByRole('heading', { name: 'SKU级销售明细' })).toBeInTheDocument()
+    expect(screen.getByText('美区组')).toBeInTheDocument()
+    expect(screen.getByText('欧区组')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '订单数量' })).toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole('textbox', { name: '搜索SKU级明细' }), { target: { value: 'sku-b' } })
+    expect(screen.getByText('SKU-B')).toBeInTheDocument()
+    expect(screen.queryByText('SKU-A')).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole('textbox', { name: '搜索SKU级明细' }), { target: { value: '' } })
+    fireEvent.change(screen.getByRole('combobox', { name: '区域筛选' }), { target: { value: '欧洲' } })
+    expect(screen.getByText('SKU-EU')).toBeInTheDocument()
+    expect(screen.queryByText('SKU-A')).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole('combobox', { name: '区域筛选' }), { target: { value: '美东' } })
+    fireEvent.change(screen.getByRole('combobox', { name: '数量排序' }), { target: { value: 'asc' } })
+    const rows = [...container.querySelectorAll('.sku-detail-scroll tbody tr:not(.sku-detail-group)')]
+    expect(rows.map((row) => row.textContent)).toEqual(expect.arrayContaining([expect.stringContaining('SKU-A'), expect.stringContaining('SKU-B')]))
+    expect(rows[0]).toHaveTextContent('SKU-B')
+  })
+
+  it('库存SKU明细分别显示在库、在途、合计和占比', () => {
+    render(<InventoryHeatmapPage siteInventory={siteInventory} stateInventory={{ CA: 13 }} addresses={addresses} details={inventoryDetails}/>)
+
+    expect(screen.getByRole('heading', { name: 'SKU级库存明细' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '在库量（件）' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '在途量（件）' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '合计（件）' })).toBeInTheDocument()
+    expect(screen.getByText('SKU-A').closest('tr')).toHaveTextContent('12820')
   })
 })

@@ -10,12 +10,13 @@ import SalesHeatmapPage from './pages/SalesHeatmapPage'
 import SettingsPage from './pages/SettingsPage'
 import { defaultAddresses, defaultAnalysisSettings, defaultQuoteSlots, stateRegions } from './data'
 import { db, getSetting, saveFile, saveQuote, settingKeys, setSetting, updateFileMapping } from './storage'
-import { countryToSiteRegion, demandRegion, demandSiteRegion, inspectWorkbook, localQuoteDraft, parseForecast, parseInventory, parseOutbound, parsePackaging, parseWarehouses, postalRegion, readMappedRows } from './fileParser'
+import { countryToSiteRegion, demandSiteRegion, inspectWorkbook, localQuoteDraft, parseForecast, parseInventory, parseOutbound, parsePackaging, parseWarehouses, postalRegion, readMappedRows } from './fileParser'
 import { optimizeTransfers } from './analysis'
-import { aggregateStateDemand, aggregateStateInventory } from './stateAggregation'
+import { aggregateInventoryHeatmapDetails, aggregateSalesHeatmapDetails, buildProductMetadata, type ResolvedOutboundRecord } from './heatmapDetails'
+import { aggregateStateDemand, aggregateStateInventory, resolveOutboundDemandRegion } from './stateAggregation'
 import { parseQuoteWithAi, testAiConnection } from './ai'
 import { exportAnalysisWorkbook } from './exportExcel'
-import type { AiSettings, AnalysisResult, AnalysisSettings, DemandRegion, FileSlotDefinition, ManualTransferQuote, OutboundRecord, PageId, QuoteVersion, SiteInventorySummary, SiteRegion, StoredFile, WarehouseAddress } from './types'
+import type { AiSettings, AnalysisResult, AnalysisSettings, DemandRegion, FileSlotDefinition, InventoryHeatmapSkuDetail, ManualTransferQuote, PageId, QuoteVersion, SalesHeatmapSkuDetail, SiteInventorySummary, SiteRegion, StoredFile, WarehouseAddress, WarehouseRegion } from './types'
 import './styles.css'
 
 const defaultAiSettings: AiSettings = {
@@ -26,7 +27,14 @@ type HeatmapSnapshot = {
   history: HistoricalSummary
   siteInventory: SiteInventorySummary[]
   stateInventory: Record<string, number>
+  salesDetails: SalesHeatmapSkuDetail[]
+  inventoryDetails: InventoryHeatmapSkuDetail[]
   savedAt: string
+}
+
+type HistoryBuildResult = {
+  summary: HistoricalSummary
+  resolvedRows: ResolvedOutboundRecord[]
 }
 
 let initializationPromise: Promise<void> | undefined
@@ -57,6 +65,8 @@ export default function App() {
   const [siteInventory, setSiteInventory] = useState<SiteInventorySummary[]>([])
   const [regionInventory, setRegionInventory] = useState<Record<DemandRegion, number>>({ 美西: 0, 美中: 0, 美东: 0, 加拿大: 0, 英国: 0, 欧洲: 0 })
   const [stateInventory, setStateInventory] = useState<Record<string, number>>({})
+  const [salesDetails, setSalesDetails] = useState<SalesHeatmapSkuDetail[]>([])
+  const [inventoryDetails, setInventoryDetails] = useState<InventoryHeatmapSkuDetail[]>([])
 
   const refreshData = async () => {
     const [nextFiles, nextQuotes, nextAddresses, nextManual, savedResults] = await Promise.all([db.files.toArray(), db.quotes.orderBy('slot').toArray(), db.warehouseAddresses.toArray(), db.manualTransferQuotes.toArray(), db.results.orderBy('createdAt').last()])
@@ -70,6 +80,8 @@ export default function App() {
       setHistory(snapshot.history)
       setSiteInventory(snapshot.siteInventory)
       setStateInventory(snapshot.stateInventory)
+      setSalesDetails(snapshot.salesDetails ?? [])
+      setInventoryDetails(snapshot.inventoryDetails ?? [])
     }
   }
 
@@ -175,7 +187,8 @@ export default function App() {
       let inventory = parseInventory(inventoryFile)
       const forecast = parseForecast(forecastFile)
       const packaging = valid('packaging') ? parsePackaging(valid('packaging')!) : []
-      const historic = buildHistory(files)
+      const historyBuild = buildHistory(files)
+      const historic = historyBuild.summary
       setHistory(historic)
       const addressRegion = new Map(addresses.filter((row) => row.confirmed).map((row) => [row.code, row.confirmedRegion!]))
       const warehouses = parseWarehouses(warehouseFile).map((row) => ({ ...row, region: addressRegion.get(row.code) ?? row.region }))
@@ -183,12 +196,24 @@ export default function App() {
       const warehouseSiteRegionByName = new Map(warehouses.map((row) => [row.name, row.siteRegion]).filter((pair): pair is [string, SiteRegion] => Boolean(pair[1])))
       const warehouseRegionByName = new Map(warehouses.map((row) => [row.name, row.region]))
       const productFile = valid('product')
-      const seriesByProduct = new Map(productFile ? readMappedRows(productFile).flatMap((row) => {
-        const productCode = String(row['商品编码'] ?? '').trim() || String(row['SKU'] ?? '').trim()
-        const series = String(row['销售系列'] ?? '').trim() || String(row['销售产品线'] ?? '').trim()
-        return productCode && series ? [[productCode, series] as const] : []
-      }) : [])
+      const productRows = productFile ? readMappedRows(productFile) : []
+      const productMetadata = buildProductMetadata(productRows)
+      const seriesByProduct = new Map(productRows.flatMap((row) => {
+        const series = String(row['销售系列'] ?? '').trim()
+        if (!series) return []
+        const keys = new Set([String(row['商品编码'] ?? '').trim(), String(row['SKU'] ?? '').trim()])
+        keys.delete('')
+        return [...keys].map((key) => [key, series] as const)
+      }))
       inventory = inventory.map((row) => ({ ...row, warehouseCode: warehouseCodeByName.get(row.warehouseName) ?? row.warehouseName, series: seriesByProduct.get(row.productCode) || row.productCode, siteRegion: warehouseSiteRegionByName.get(row.warehouseName), region: warehouseRegionByName.get(row.warehouseName) }))
+      const usRegionByWarehouseCode = new Map(addresses.flatMap((address) => {
+        const region = address.confirmed ? stateRegions[address.state.trim().toUpperCase()] : undefined
+        return region ? [[address.code.trim().toUpperCase(), region] as [string, WarehouseRegion]] : []
+      }))
+      const nextSalesDetails = aggregateSalesHeatmapDetails(historyBuild.resolvedRows, productMetadata)
+      const nextInventoryDetails = aggregateInventoryHeatmapDetails(inventory, productMetadata, usRegionByWarehouseCode)
+      setSalesDetails(nextSalesDetails)
+      setInventoryDetails(nextInventoryDetails)
       const activePackages = quotes.filter((quote) => quote.status === '已应用' && quote.activeRules.length)
       const packages = activePackages.length ? activePackages : [{ ...defaultQuoteSlots[0], logisticsCompany: '未配置物流商报价' }]
       const candidates = packages.flatMap((quote) => optimizeTransfers({ inventory, forecast, packaging, warehouses, activeRules: quote.activeRules, manualQuotes: latestManualQuotes, settings: analysisSettings, merchantDemandShare: historic.commonDateRange ? historic.channelMerchantShare : 1 }).map((row) => ({ ...row, transferResource: row.transferResource === '物流商中转' ? `${quote.logisticsCompany}中转` : row.transferResource, decision: historic.commonDateRange ? row.decision : '待补数据' as const, transferQuantity: historic.commonDateRange ? row.transferQuantity : 0, transferRatio: historic.commonDateRange ? row.transferRatio : 0, dataQualityMessages: [...row.dataQualityMessages, ...(quote.activeRules.length ? [] : ['尚未应用仓库报价，费用结果仅供数据检查']), ...(historic.commonDateRange ? [] : ['历史出库共同区间不足，不生成正式调拨建议'])] })))
@@ -227,45 +252,40 @@ export default function App() {
       setRegionInventory(nextRegionInventory)
       const nextStateInventory = aggregateStateInventory(inventory, addresses)
       setStateInventory(nextStateInventory)
-      await setSetting(settingKeys.heatmapSnapshot, { history: historic, siteInventory: nextSiteInventory, stateInventory: nextStateInventory, savedAt: new Date().toISOString() })
+      await setSetting(settingKeys.heatmapSnapshot, { history: historic, siteInventory: nextSiteInventory, stateInventory: nextStateInventory, salesDetails: nextSalesDetails, inventoryDetails: nextInventoryDetails, savedAt: new Date().toISOString() })
       setResults(rows)
       setPage('results'); notify(`测算完成，共生成 ${rows.length} 条结果`)
     } catch (error) { notify(error instanceof Error ? error.message : '测算失败', 'danger') }
     finally { setRunning(false) }
   }
 
-  const pageContent = page === 'files' ? <FileLibraryPage files={files} uploading={uploading} onUpload={handleUpload} onMap={(file) => { setSelectedFile(file); setPage('mapping') }} onClear={async () => { await db.transaction('rw', [db.files, db.results, db.manualTransferQuotes], async () => { await db.files.clear(); await db.results.clear(); await db.manualTransferQuotes.clear() }); await db.settings.delete(settingKeys.heatmapSnapshot); setHistory(emptyHistoricalSummary()); setSiteInventory([]); setStateInventory({}); await refreshData(); setSelectedFile(undefined); notify('本次分析文件、结果和自行询价已清空') }}/>
+  const pageContent = page === 'files' ? <FileLibraryPage files={files} uploading={uploading} onUpload={handleUpload} onMap={(file) => { setSelectedFile(file); setPage('mapping') }} onClear={async () => { await db.transaction('rw', [db.files, db.results, db.manualTransferQuotes], async () => { await db.files.clear(); await db.results.clear(); await db.manualTransferQuotes.clear() }); await db.settings.delete(settingKeys.heatmapSnapshot); setHistory(emptyHistoricalSummary()); setSiteInventory([]); setStateInventory({}); setSalesDetails([]); setInventoryDetails([]); await refreshData(); setSelectedFile(undefined); notify('本次分析文件、结果和自行询价已清空') }}/>
     : page === 'mapping' ? <MappingPage files={files} selected={selectedFile ?? files[0]} uploading={uploading} onSelect={setSelectedFile} onUpload={handleUpload} onSave={saveMapping}/>
     : page === 'quotes' ? <QuotePage quotes={quotes} aiSettings={aiSettings} busySlot={busySlot} onUpload={uploadQuote} onApply={applyQuote} onSaveAi={saveAiSettings} onTestAi={testAi}/>
     : page === 'settings' ? <SettingsPage settings={analysisSettings} addresses={addresses} onSaveSettings={saveAnalysisSettings} onSaveAddress={saveAddress} onDeleteAddress={async (id) => { if (id) await db.warehouseAddresses.delete(id); await refreshData() }}/>
-    : page === 'salesHeatmap' ? <SalesHeatmapPage history={history} addresses={addresses}/>
-    : page === 'inventoryHeatmap' ? <InventoryHeatmapPage siteInventory={siteInventory} stateInventory={stateInventory} addresses={addresses}/>
+    : page === 'salesHeatmap' ? <SalesHeatmapPage history={history} addresses={addresses} details={salesDetails}/>
+    : page === 'inventoryHeatmap' ? <InventoryHeatmapPage siteInventory={siteInventory} stateInventory={stateInventory} addresses={addresses} details={inventoryDetails}/>
     : page === 'inventoryAnalysis' ? <InventoryAnalysisPage/>
     : <ResultsPage results={results} addresses={addresses} manualQuotes={manualQuotes} history={history} siteInventory={siteInventory} running={running} onRun={runAnalysis} onAddManualQuote={async (quote) => { await db.manualTransferQuotes.add(quote); await refreshData(); notify('自行寻找的中转报价已保存，正在重新测算'); await runAnalysis() }} onDeleteManualQuote={async (id) => { if (id) await db.manualTransferQuotes.delete(id); await refreshData(); notify('自行询价已删除') }} onExport={() => exportAnalysisWorkbook(results, analysisSettings, files, quotes, manualQuotes)}/>
 
   return <AppShell page={page} onNavigate={setPage}>{message ? <div className={`toast ${message.tone}`}>{message.text}</div> : null}{pageContent}</AppShell>
 }
 
-function buildHistory(files: StoredFile[]): HistoricalSummary {
+function buildHistory(files: StoredFile[]): HistoryBuildResult {
   const amazonFile = files.find((file) => file.slotId === 'amazonOutbound' && file.validation === '校验通过')
   const merchantFile = files.find((file) => file.slotId === 'merchantOutbound' && file.validation === '校验通过')
-  if (!amazonFile || !merchantFile) return { channelAmazonShare: 0, channelMerchantShare: 0, postcodeCoverage: 0, regionDemand: { 美西: 0, 美中: 0, 美东: 0, 英国: 0, 加拿大: 0, 欧洲: 0 }, regionDemandAmount: { 美西: 0, 美中: 0, 美东: 0, 英国: 0, 加拿大: 0, 欧洲: 0 }, stateDemand: {}, siteDailyDemand: { 美国: 0, 加拿大: 0, 英国: 0, 欧洲: 0 }, messages: ['亚马逊仓配与商家自发货历史出库数据未同时通过校验，不生成正式地区建议'] }
+  if (!amazonFile || !merchantFile) return { summary: { channelAmazonShare: 0, channelMerchantShare: 0, postcodeCoverage: 0, regionDemand: { 美西: 0, 美中: 0, 美东: 0, 英国: 0, 加拿大: 0, 欧洲: 0 }, regionDemandAmount: { 美西: 0, 美中: 0, 美东: 0, 英国: 0, 加拿大: 0, 欧洲: 0 }, stateDemand: {}, siteDailyDemand: { 美国: 0, 加拿大: 0, 英国: 0, 欧洲: 0 }, messages: ['亚马逊仓配与商家自发货历史出库数据未同时通过校验，不生成正式地区建议'] }, resolvedRows: [] }
   const amazon = parseOutbound(amazonFile, '亚马逊仓配'), merchant = parseOutbound(merchantFile, '商家自发货')
   const datesA = amazon.map((row) => row.date).filter(Boolean).sort(), datesM = merchant.map((row) => row.date).filter(Boolean).sort()
   const start = [datesA[0], datesM[0]].filter(Boolean).sort().at(-1), end = [datesA.at(-1), datesM.at(-1)].filter(Boolean).sort()[0]
-  if (!start || !end || start > end) return { channelAmazonShare: 0, channelMerchantShare: 0, postcodeCoverage: 0, regionDemand: { 美西: 0, 美中: 0, 美东: 0, 英国: 0, 加拿大: 0, 欧洲: 0 }, regionDemandAmount: { 美西: 0, 美中: 0, 美东: 0, 英国: 0, 加拿大: 0, 欧洲: 0 }, stateDemand: {}, siteDailyDemand: { 美国: 0, 加拿大: 0, 英国: 0, 欧洲: 0 }, messages: ['两类历史出库没有共同覆盖日期区间，不生成正式地区建议'] }
+  if (!start || !end || start > end) return { summary: { channelAmazonShare: 0, channelMerchantShare: 0, postcodeCoverage: 0, regionDemand: { 美西: 0, 美中: 0, 美东: 0, 英国: 0, 加拿大: 0, 欧洲: 0 }, regionDemandAmount: { 美西: 0, 美中: 0, 美东: 0, 英国: 0, 加拿大: 0, 欧洲: 0 }, stateDemand: {}, siteDailyDemand: { 美国: 0, 加拿大: 0, 英国: 0, 欧洲: 0 }, messages: ['两类历史出库没有共同覆盖日期区间，不生成正式地区建议'] }, resolvedRows: [] }
   const a = amazon.filter((row) => row.date >= start && row.date <= end), m = merchant.filter((row) => row.date >= start && row.date <= end), all = [...a, ...m]
   const stateDemand = aggregateStateDemand(all)
   const amountA = a.reduce((sum, row) => sum + row.quantity, 0), amountM = m.reduce((sum, row) => sum + row.quantity, 0), total = amountA + amountM
-  const resolveRegion = (row: OutboundRecord): DemandRegion | undefined => {
-    const site = countryToSiteRegion(row.country ?? '')
-    if (site === '美国') return demandRegion(row.postalCode)
-    if (site) return site
-    return demandRegion(row.postalCode)
-  }
-  const valid = all.filter((row) => resolveRegion(row)), validAmount = valid.reduce((sum, row) => sum + row.quantity, 0)
+  const resolvedRows = all.flatMap((row) => { const region = resolveOutboundDemandRegion(row); return region ? [{ row, region }] : [] })
+  const valid = resolvedRows.map((item) => item.row), validAmount = valid.reduce((sum, row) => sum + row.quantity, 0)
   const regions: Record<DemandRegion, number> = { 美西: 0, 美中: 0, 美东: 0, 英国: 0, 加拿大: 0, 欧洲: 0 }
-  valid.forEach((row) => { const region = resolveRegion(row); if (region) regions[region] += row.quantity })
+  resolvedRows.forEach(({ row, region }) => { regions[region] += row.quantity })
   const regionDemandAmount = { ...regions }
   ;(Object.keys(regions) as DemandRegion[]).forEach((region) => { regions[region] = validAmount ? regions[region] / validAmount : 0 })
   const messages = []
@@ -276,7 +296,7 @@ function buildHistory(files: StoredFile[]): HistoricalSummary {
   all.forEach((row) => { const region = countryToSiteRegion(row.country ?? '') ?? demandSiteRegion(row.postalCode); if (region) siteAmount[region] += row.quantity })
   const siteDailyDemand: Record<SiteRegion, number> = { 美国: 0, 加拿大: 0, 英国: 0, 欧洲: 0 }
   ;(Object.keys(siteDailyDemand) as SiteRegion[]).forEach((region) => { siteDailyDemand[region] = totalDays > 0 ? siteAmount[region] / totalDays : 0 })
-  return { channelAmazonShare: total ? amountA / total : 0, channelMerchantShare: total ? amountM / total : 0, postcodeCoverage: total ? validAmount / total : 0, regionDemand: regions, regionDemandAmount, stateDemand, siteDailyDemand, commonDateRange: `${start} 至 ${end}`, messages }
+  return { summary: { channelAmazonShare: total ? amountA / total : 0, channelMerchantShare: total ? amountM / total : 0, postcodeCoverage: total ? validAmount / total : 0, regionDemand: regions, regionDemandAmount, stateDemand, siteDailyDemand, commonDateRange: `${start} 至 ${end}`, messages }, resolvedRows }
 }
 
 function emptyHistoricalSummary(): HistoricalSummary {

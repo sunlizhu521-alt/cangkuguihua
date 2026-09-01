@@ -1,9 +1,10 @@
 import { PageHeader } from '../components/Common'
+import HeatmapSkuDetailTable from '../components/HeatmapSkuDetailTable'
 import InventoryWorldMap from '../components/InventoryWorldMap'
 import { stateRegions } from '../data'
-import type { SiteInventorySummary, WarehouseAddress, WarehouseRegion } from '../types'
+import type { InventoryHeatmapSkuDetail, SiteInventorySummary, WarehouseAddress, WarehouseRegion } from '../types'
 
-export default function InventoryHeatmapPage({ siteInventory, stateInventory, addresses }: { siteInventory: SiteInventorySummary[]; stateInventory: Record<string, number>; addresses: WarehouseAddress[] }) {
+export default function InventoryHeatmapPage({ siteInventory, stateInventory, addresses, details }: { siteInventory: SiteInventorySummary[]; stateInventory: Record<string, number>; addresses: WarehouseAddress[]; details: InventoryHeatmapSkuDetail[] }) {
   const internationalRegions = ['加拿大', '英国', '欧洲'] as const
   const siteInventoryByRegion = new Map(siteInventory.map((row) => [row.region, row.onHand + row.inTransit]))
   const internationalTotal = internationalRegions.reduce((sum, region) => sum + (siteInventoryByRegion.get(region) ?? 0), 0)
@@ -27,5 +28,6 @@ export default function InventoryHeatmapPage({ siteInventory, stateInventory, ad
         </div>
       </div>
     </section>
+    <HeatmapSkuDetailTable mode="inventory" rows={details}/>
   </div>
 }

@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
 import type { HistoricalSummary } from '../pages/ResultsPage'
-import type { SiteInventorySummary, StoredFile } from '../types'
+import type { InventoryHeatmapSkuDetail, SalesHeatmapSkuDetail, SiteInventorySummary, StoredFile } from '../types'
 
 const storageMock = vi.hoisted(() => {
   const values = new Map<string, unknown>()
@@ -24,7 +24,7 @@ const storageMock = vi.hoisted(() => {
   }
   const warehouseAddresses = {
     ...table(),
-    toArray: vi.fn(async () => []),
+    toArray: vi.fn(async () => [{ code: 'CA-WH', name: '加州仓', state: 'CA', city: '', address: '', postalCode: '90001', suggestedRegion: '美西', confirmedRegion: '美西', confirmed: true }]),
     where: vi.fn(() => ({ equals: vi.fn(() => ({ first: vi.fn(async () => undefined) })) })),
     put: vi.fn(async () => undefined),
     delete: vi.fn(async () => undefined),
@@ -107,6 +107,14 @@ const siteInventory: SiteInventorySummary[] = [
   { region: '加拿大', onHand: 9, inTransit: 4, dailyDemand: 0, safetyStock: 0, coverageDays: Number.POSITIVE_INFINITY, status: '安全' },
 ]
 
+const salesDetails: SalesHeatmapSkuDetail[] = [
+  { region: '美西', productLine: '产品线甲', series: '系列甲', sku: 'SNAPSHOT-SKU', orderQuantity: 80, ratio: 0.4 },
+]
+
+const inventoryDetails: InventoryHeatmapSkuDetail[] = [
+  { region: '美西', productLine: '产品线甲', series: '系列甲', sku: 'SNAPSHOT-SKU', onHand: 13, inTransit: 2, total: 15, ratio: 1 },
+]
+
 function storedFile(slotId: StoredFile['slotId']): StoredFile {
   return { slotId, fileName: `${slotId}.xlsx`, updatedAt: '2026-09-01T00:00:00.000Z', rowCount: 1, sheetNames: ['数据'], headers: [], previewRows: [], data: new ArrayBuffer(0), mapping: {}, validation: '校验通过', missingFields: [] }
 }
@@ -124,13 +132,23 @@ afterEach(() => {
 })
 
 describe('热力图快照', () => {
-  it('页面加载时恢复快照，清空文件后同步删除且不残留旧数据', async () => {
+  it('兼容恢复尚未包含SKU明细的旧快照', async () => {
     storageMock.values.set('热力图快照', { history, siteInventory, stateInventory: { CA: 13 }, savedAt: '2026-09-01T00:00:00.000Z' })
     render(<App/>)
 
     await waitFor(() => expect(storageMock.getSetting).toHaveBeenCalledWith('热力图快照', null))
     fireEvent.click(screen.getByRole('button', { name: '销售热力图' }))
-    expect(screen.getByText('40.0%')).toBeInTheDocument()
+    expect(screen.getByText('请运行分析生成SKU级明细')).toBeInTheDocument()
+  })
+
+  it('页面加载时恢复快照，清空文件后同步删除且不残留旧数据', async () => {
+    storageMock.values.set('热力图快照', { history, siteInventory, stateInventory: { CA: 13 }, salesDetails, inventoryDetails, savedAt: '2026-09-01T00:00:00.000Z' })
+    render(<App/>)
+
+    await waitFor(() => expect(storageMock.getSetting).toHaveBeenCalledWith('热力图快照', null))
+    fireEvent.click(screen.getByRole('button', { name: '销售热力图' }))
+    expect(screen.getAllByText('40.0%').length).toBeGreaterThan(0)
+    expect(screen.getByText('SNAPSHOT-SKU')).toBeInTheDocument()
     expect(document.querySelector('path[data-state="CA"]')).not.toHaveAttribute('fill', '#eef1f5')
 
     fireEvent.click(screen.getByRole('button', { name: '文件库' }))
@@ -138,6 +156,7 @@ describe('热力图快照', () => {
     await waitFor(() => expect(storageMock.db.settings.delete).toHaveBeenCalledWith('热力图快照'))
     fireEvent.click(screen.getByRole('button', { name: '销售热力图' }))
     expect(await screen.findByText('请完成历史出库数据映射并运行分析')).toBeInTheDocument()
+    expect(screen.queryByText('SNAPSHOT-SKU')).not.toBeInTheDocument()
     expect(document.querySelector('path[data-state="CA"]')).toHaveAttribute('fill', '#eef1f5')
   })
 
@@ -150,10 +169,12 @@ describe('热力图快照', () => {
     fireEvent.click(screen.getByRole('button', { name: '重新测算' }))
 
     await waitFor(() => expect(storageMock.setSetting).toHaveBeenCalledWith('热力图快照', expect.objectContaining({ stateInventory: { CA: 7 }, savedAt: expect.any(String) })))
-    const saved = storageMock.values.get('热力图快照') as { history: HistoricalSummary; siteInventory: SiteInventorySummary[]; stateInventory: Record<string, number>; savedAt: string }
+    const saved = storageMock.values.get('热力图快照') as { history: HistoricalSummary; siteInventory: SiteInventorySummary[]; stateInventory: Record<string, number>; salesDetails: SalesHeatmapSkuDetail[]; inventoryDetails: InventoryHeatmapSkuDetail[]; savedAt: string }
     expect(saved.history.messages).toContain('亚马逊仓配与商家自发货历史出库数据未同时通过校验，不生成正式地区建议')
     expect(saved.siteInventory.find((row) => row.region === '美国')?.onHand).toBe(7)
     expect(saved.stateInventory).toEqual({ CA: 7 })
+    expect(saved.salesDetails).toEqual([])
+    expect(saved.inventoryDetails[0]).toMatchObject({ region: '美西', sku: '商品一', onHand: 7, inTransit: 0, total: 7 })
     expect(Number.isNaN(Date.parse(saved.savedAt))).toBe(false)
   })
 })

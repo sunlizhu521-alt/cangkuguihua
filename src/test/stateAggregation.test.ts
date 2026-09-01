@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aggregateStateDemand, aggregateStateInventory } from '../stateAggregation'
+import { aggregateStateDemand, aggregateStateInventory, resolveOutboundDemandRegion } from '../stateAggregation'
 import type { InventoryRecord, OutboundRecord, WarehouseAddress } from '../types'
 
 function outbound(postalCode: string, quantity: number, country?: string): OutboundRecord {
@@ -15,6 +15,14 @@ function address(code: string, state: string, confirmed = true): WarehouseAddres
 }
 
 describe('美国州级热力聚合', () => {
+  it('销售区域共用邮编前缀到州再到美国三区的映射', () => {
+    expect(resolveOutboundDemandRegion(outbound('90001', 1, '美国'))).toBe('美西')
+    expect(resolveOutboundDemandRegion(outbound('07030', 1, 'USA'))).toBe('美东')
+    expect(resolveOutboundDemandRegion(outbound('K1A 0B1', 1, '加拿大'))).toBe('加拿大')
+    expect(resolveOutboundDemandRegion(outbound('75001', 1, '法国'))).toBe('欧洲')
+    expect(resolveOutboundDemandRegion(outbound('00000', 1, '美国'))).toBeUndefined()
+  })
+
   it('邮编前3位只聚合美国州，海外和异常邮编安全跳过', () => {
     const result = aggregateStateDemand([
       outbound('90001', 10, '美国'),

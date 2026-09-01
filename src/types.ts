@@ -43,6 +43,24 @@ export type WarehouseRegion = '美西' | '美中' | '美东'
 export type DemandRegion = '美西' | '美中' | '美东' | '英国' | '加拿大' | '欧洲'
 export type SiteRegion = '美国' | '加拿大' | '英国' | '欧洲'
 
+export interface HeatmapSkuDetailBase {
+  region: DemandRegion
+  productLine: string
+  series: string
+  sku: string
+  ratio: number
+}
+
+export interface SalesHeatmapSkuDetail extends HeatmapSkuDetailBase {
+  orderQuantity: number
+}
+
+export interface InventoryHeatmapSkuDetail extends HeatmapSkuDetailBase {
+  onHand: number
+  inTransit: number
+  total: number
+}
+
 export interface WarehouseAddress {
   id?: number
   code: string

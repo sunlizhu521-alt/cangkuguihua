@@ -1,10 +1,11 @@
 import { AlertTriangle } from 'lucide-react'
 import { PageHeader, StatusTag } from '../components/Common'
+import HeatmapSkuDetailTable from '../components/HeatmapSkuDetailTable'
 import UnifiedWorldMap from '../components/InventoryWorldMap'
-import type { WarehouseAddress, WarehouseRegion } from '../types'
+import type { SalesHeatmapSkuDetail, WarehouseAddress, WarehouseRegion } from '../types'
 import type { HistoricalSummary } from './ResultsPage'
 
-export default function SalesHeatmapPage({ history, addresses }: { history: HistoricalSummary; addresses: WarehouseAddress[] }) {
+export default function SalesHeatmapPage({ history, addresses, details }: { history: HistoricalSummary; addresses: WarehouseAddress[]; details: SalesHeatmapSkuDetail[] }) {
   const warehouses = addresses.filter((row) => row.confirmed).map((row) => ({ code: row.code, state: row.state }))
   const internationalRegions = ['加拿大', '英国', '欧洲'] as const
   const internationalDemand = {
@@ -26,5 +27,6 @@ export default function SalesHeatmapPage({ history, addresses }: { history: Hist
         </div>
       </div>
     </section>
+    <HeatmapSkuDetailTable mode="sales" rows={details}/>
   </div>
 }
